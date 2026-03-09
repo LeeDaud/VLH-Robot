@@ -466,7 +466,7 @@
 
     .grid-2 {
       display: grid;
-      grid-template-columns: 1.25fr 1fr;
+      grid-template-columns: 1fr;
       gap: 16px;
     }
 
@@ -606,6 +606,32 @@
       margin-bottom: 12px;
     }
 
+    .robot-control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .robot-kpi-grid {
+      margin-top: 6px;
+    }
+
+    .robot-kpi-item {
+      border: 1px solid rgba(176, 192, 219, 0.24);
+      border-radius: var(--r-ctl);
+      background: var(--card-2);
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .robot-kpi-item .kpi-value {
+      font-size: clamp(16px, 1.4vw, 24px);
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
     .wallet-chip {
       display: flex;
       align-items: center;
@@ -732,7 +758,19 @@
     #walletTable td:nth-child(5),
     #walletTable td:nth-child(6),
     #txDelayTable th:nth-child(4),
-    #txDelayTable td:nth-child(4) {
+    #txDelayTable td:nth-child(4),
+    #robotPosTable th:nth-child(4),
+    #robotPosTable th:nth-child(5),
+    #robotPosTable th:nth-child(6),
+    #robotPosTable td:nth-child(4),
+    #robotPosTable td:nth-child(5),
+    #robotPosTable td:nth-child(6),
+    #robotTradeTable th:nth-child(4),
+    #robotTradeTable th:nth-child(5),
+    #robotTradeTable th:nth-child(6),
+    #robotTradeTable td:nth-child(4),
+    #robotTradeTable td:nth-child(5),
+    #robotTradeTable td:nth-child(6) {
       text-align: right;
     }
 
@@ -970,6 +1008,26 @@
     </section>
 
     <section class="card">
+      <div class="section-title">全局自动识别待发射项目（Pool Discovery）</div>
+      <div id="poolMeta" class="hint" style="margin-bottom:10px;">-</div>
+      <div class="table-wrap">
+        <table id="poolTable">
+          <thead>
+            <tr>
+              <th>代币地址</th>
+              <th>池地址</th>
+              <th>报价代币</th>
+              <th>Factory</th>
+              <th>主池</th>
+              <th>发现时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="section-title">项目配置管理（仅可修改 name / 内盘地址）</div>
       <div class="form-grid">
         <div class="field">
@@ -1027,6 +1085,77 @@
       <div class="card">
         <div class="kpi-title">项目累计税收(V)</div>
         <div id="projectTaxValue" class="kpi-value">-</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Robot 控制与状态</div>
+      <div class="robot-control-row">
+        <button id="robotModeObserveBtn" class="pill">观察模式</button>
+        <button id="robotModePaperBtn" class="pill">模拟模式</button>
+        <button id="robotModeLiveBtn" class="pill">实盘模式</button>
+        <button id="robotResumeBtn" class="pill">解除风控暂停</button>
+        <span id="robotControlMessage" class="hint">-</span>
+      </div>
+      <div class="grid-4 robot-kpi-grid">
+        <div class="robot-kpi-item">
+          <div class="kpi-title">Robot 模式</div>
+          <div id="robotModeValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">入场状态</div>
+          <div id="robotEntryValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">风险状态</div>
+          <div id="robotRiskValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">浮动盈亏(V)</div>
+          <div id="robotPnlValue" class="kpi-value">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Robot 当前仓位</div>
+      <div id="robotPosMeta" class="hint" style="margin-bottom:10px;">-</div>
+      <div class="table-wrap">
+        <table id="robotPosTable">
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>代币地址</th>
+              <th>阶段</th>
+              <th>仓位V</th>
+              <th>均价V</th>
+              <th>最新价V</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Robot 交易记录</div>
+      <div class="table-wrap">
+        <table id="robotTradeTable">
+          <thead>
+            <tr>
+              <th>动作</th>
+              <th>代币地址</th>
+              <th>模式</th>
+              <th>金额V</th>
+              <th>价格V</th>
+              <th>PnL(V)</th>
+              <th>原因</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
 
@@ -1146,6 +1275,20 @@
     const queueValue = document.getElementById("queueValue");
     const parsedValue = document.getElementById("parsedValue");
     const projectTaxValue = document.getElementById("projectTaxValue");
+    const robotModeObserveBtn = document.getElementById("robotModeObserveBtn");
+    const robotModePaperBtn = document.getElementById("robotModePaperBtn");
+    const robotModeLiveBtn = document.getElementById("robotModeLiveBtn");
+    const robotResumeBtn = document.getElementById("robotResumeBtn");
+    const robotControlMessage = document.getElementById("robotControlMessage");
+    const robotModeValue = document.getElementById("robotModeValue");
+    const robotEntryValue = document.getElementById("robotEntryValue");
+    const robotRiskValue = document.getElementById("robotRiskValue");
+    const robotPnlValue = document.getElementById("robotPnlValue");
+    const poolMeta = document.getElementById("poolMeta");
+    const robotPosMeta = document.getElementById("robotPosMeta");
+    const poolBody = document.querySelector("#poolTable tbody");
+    const robotPosBody = document.querySelector("#robotPosTable tbody");
+    const robotTradeBody = document.querySelector("#robotTradeTable tbody");
     const minuteMeta = document.getElementById("minuteMeta");
     const walletBody = document.querySelector("#walletTable tbody");
     const walletInput = document.getElementById("walletInput");
@@ -1850,6 +1993,9 @@
       if (meta.runtimeTuning && typeof meta.runtimeTuning.runtime_paused === "boolean") {
         setRuntimePauseUi(Boolean(meta.runtimeTuning.runtime_paused));
       }
+      if (meta.robot && typeof meta.robot === "object") {
+        setRobotModeButtons(meta.robot.mode || "observe");
+      }
       renderMonitoredWallets(meta.wallets || []);
       syncLaunchFormToSelectedProject(projectSelect.value);
       return meta;
@@ -2382,6 +2528,148 @@
       updateDelayPerf(rows);
     }
 
+    function robotModeLabel(mode) {
+      const m = String(mode || "").toLowerCase();
+      if (m === "observe") return "观察";
+      if (m === "paper") return "模拟";
+      if (m === "live") return "实盘";
+      return m || "-";
+    }
+
+    function robotStageLabel(stage) {
+      const n = Number(stage);
+      if (n === 1) return "试单";
+      if (n === 2) return "确认加仓";
+      if (n >= 3) return "趋势加仓";
+      return "未入场";
+    }
+
+    function setRobotModeButtons(mode) {
+      const m = String(mode || "").toLowerCase();
+      robotModeObserveBtn.classList.toggle("is-active", m === "observe");
+      robotModePaperBtn.classList.toggle("is-active", m === "paper");
+      robotModeLiveBtn.classList.toggle("is-active", m === "live");
+    }
+
+    function renderRobotSummary(summary) {
+      const mode = String(summary?.mode || "observe").toLowerCase();
+      const entryEnabled = Boolean(summary?.entryEnabled);
+      const runtimePausedNow = Boolean(summary?.runtimePaused);
+      const riskPaused = Boolean(summary?.riskPaused);
+      const losses = Number(summary?.consecutiveLosses || 0);
+      const maxLosses = Number(summary?.maxConsecutiveLosses || 0);
+
+      setRobotModeButtons(mode);
+      robotModeValue.textContent = robotModeLabel(mode);
+      robotEntryValue.innerHTML = entryEnabled
+        ? `<span class="status ok">允许入场</span>`
+        : `<span class="status bad">${runtimePausedNow ? "运行暂停" : "入场关闭"}</span>`;
+
+      const riskDesc = riskPaused
+        ? `已暂停 (${losses}/${maxLosses})`
+        : `正常 (${losses}/${maxLosses})`;
+      robotRiskValue.innerHTML = riskPaused
+        ? `<span class="status bad">${riskDesc}</span>`
+        : `<span class="status ok">${riskDesc}</span>`;
+      robotPnlValue.innerHTML = numWithExactTitle(
+        fmtNum(summary?.unrealizedPnlV, 6),
+        summary?.unrealizedPnlV
+      );
+
+      robotPosMeta.textContent =
+        `持仓数=${fmtNum(summary?.openPositionCount || 0, 0)} | ` +
+        `投入V=${fmtNum(summary?.investedV || 0, 4)} | ` +
+        `市值V=${fmtNum(summary?.marketValueV || 0, 4)}`;
+    }
+
+    function renderPoolTable(rows) {
+      poolBody.innerHTML = "";
+      (rows || []).forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${addrWithCopyHtml(r.token_address)}</td>
+          <td>${addrWithCopyHtml(r.pool_address)}</td>
+          <td>${addrWithCopyHtml(r.quote_token)}</td>
+          <td>${addrWithCopyHtml(r.factory_address)}</td>
+          <td style="text-align:center;">${Number(r.is_primary) ? "是" : "否"}</td>
+          <td>${fmtTs(r.discovered_at || r.updated_at)}</td>
+        `;
+        poolBody.appendChild(tr);
+      });
+      if (!(rows || []).length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="6" class="muted">暂无自动识别到的池。</td>`;
+        poolBody.appendChild(tr);
+      }
+      poolMeta.textContent = `全局识别池数量：${fmtNum((rows || []).length, 0)}`;
+    }
+
+    function renderRobotPositions(rows) {
+      robotPosBody.innerHTML = "";
+      (rows || []).forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.project || "-"}</td>
+          <td>${addrWithCopyHtml(r.token_address)}</td>
+          <td>${robotStageLabel(r.stage)}</td>
+          <td>${numWithExactTitle(fmtNum(r.position_value_v, 6), r.position_value_v)}</td>
+          <td>${numWithExactTitle(fmtNum(r.avg_cost_v, 8), r.avg_cost_v)}</td>
+          <td>${numWithExactTitle(fmtNum(r.last_price_v, 8), r.last_price_v)}</td>
+          <td>${fmtTs(r.updated_at)}</td>
+        `;
+        robotPosBody.appendChild(tr);
+      });
+      if (!(rows || []).length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="7" class="muted">暂无机器人仓位。</td>`;
+        robotPosBody.appendChild(tr);
+      }
+    }
+
+    function renderRobotTrades(rows) {
+      robotTradeBody.innerHTML = "";
+      (rows || []).forEach((r) => {
+        const action = String(r.action || "").toLowerCase();
+        const actionBadge = action === "buy"
+          ? `<span class="status ok">BUY</span>`
+          : action === "sell"
+            ? `<span class="status bad">SELL</span>`
+            : (r.action || "-");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${actionBadge}</td>
+          <td>${addrWithCopyHtml(r.token_address)}</td>
+          <td>${robotModeLabel(r.mode)}</td>
+          <td>${numWithExactTitle(fmtNum(r.amount, 6), r.amount)}</td>
+          <td>${numWithExactTitle(fmtNum(r.price, 8), r.price)}</td>
+          <td>${numWithExactTitle(fmtNum(r.pnl_v, 6), r.pnl_v)}</td>
+          <td>${tipSpanHtml(String(r.reason || "-"), String(r.reason || "-"))}</td>
+          <td>${fmtTs(r.timestamp)}</td>
+        `;
+        robotTradeBody.appendChild(tr);
+      });
+      if (!(rows || []).length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="8" class="muted">暂无机器人交易记录。</td>`;
+        robotTradeBody.appendChild(tr);
+      }
+    }
+
+    async function setRobotMode(mode) {
+      const data = await requestJsonWithBody("/robot/mode", "POST", { mode });
+      setRobotModeButtons(String(data?.mode || mode));
+      await refreshAllSafe();
+      robotControlMessage.textContent = `Robot 模式已切换为：${robotModeLabel(data?.mode || mode)}`;
+      return true;
+    }
+
+    async function resumeRobotRisk() {
+      await requestJsonWithBody("/robot/resume", "POST", {});
+      await refreshAllSafe();
+      robotControlMessage.textContent = "Robot 风控暂停已解除";
+      return true;
+    }
+
     async function refreshAll() {
       const project = projectSelect.value;
       const range = getMinuteRangeTs();
@@ -2393,6 +2681,10 @@
       const tasks = [
         jget("/health"),
         jget(walletUrl),
+        jget("/robot/summary").catch(() => ({})),
+        jget("/token-pools?limit=120").catch(() => ({ items: [] })),
+        jget("/robot/positions").catch(() => ({ items: [] })),
+        jget("/robot/trades?limit=80").catch(() => ({ items: [] })),
       ];
       if (project) {
         tasks.push(jget(`/minutes?project=${encodeURIComponent(project)}&from=${from}&to=${to}`));
@@ -2405,7 +2697,18 @@
         tasks.push(Promise.resolve({ items: [] }));
         tasks.push(Promise.resolve({ sum_tax_v: "0" }));
       }
-      const [health, wallets, minutes, leader, txDelays, projectTax] = await Promise.all(tasks);
+      const [
+        health,
+        wallets,
+        robotSummary,
+        poolData,
+        robotPositions,
+        robotTrades,
+        minutes,
+        leader,
+        txDelays,
+        projectTax
+      ] = await Promise.all(tasks);
       if (typeof health.runtimePaused === "boolean") {
         setRuntimePauseUi(health.runtimePaused);
       }
@@ -2420,6 +2723,10 @@
       projectTaxValue.innerHTML = project
         ? numWithExactTitle(fmtNum(projectTax?.sum_tax_v ?? 0, 2), projectTax?.sum_tax_v ?? 0)
         : "-";
+      renderRobotSummary(robotSummary || {});
+      renderPoolTable(poolData?.items || []);
+      renderRobotPositions(robotPositions?.items || []);
+      renderRobotTrades(robotTrades?.items || []);
 
       const minuteRows = minutes.items || [];
       drawMinuteChart(minuteRows);
@@ -2626,6 +2933,38 @@
         runtimePauseBtn.disabled = false;
         setRuntimePauseUi(runtimePaused);
       }
+    });
+    robotModeObserveBtn.addEventListener("click", () => {
+      runButtonAction(
+        robotModeObserveBtn,
+        { loading: "切换中...", success: "已切换", failed: "切换失败" },
+        () => setRobotMode("observe"),
+        robotControlMessage
+      ).catch(console.error);
+    });
+    robotModePaperBtn.addEventListener("click", () => {
+      runButtonAction(
+        robotModePaperBtn,
+        { loading: "切换中...", success: "已切换", failed: "切换失败" },
+        () => setRobotMode("paper"),
+        robotControlMessage
+      ).catch(console.error);
+    });
+    robotModeLiveBtn.addEventListener("click", () => {
+      runButtonAction(
+        robotModeLiveBtn,
+        { loading: "切换中...", success: "已切换", failed: "切换失败" },
+        () => setRobotMode("live"),
+        robotControlMessage
+      ).catch(console.error);
+    });
+    robotResumeBtn.addEventListener("click", () => {
+      runButtonAction(
+        robotResumeBtn,
+        { loading: "处理中...", success: "已恢复", failed: "恢复失败" },
+        resumeRobotRisk,
+        robotControlMessage
+      ).catch(console.error);
     });
     refreshBtn.addEventListener("click", () => {
       runButtonAction(

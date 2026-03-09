@@ -8,6 +8,9 @@ Virtuals-Launch-Hunter 是一个面向 Base 链的实时监控与回扫分析工
 - 手动回扫：支持 UTC+8 时间区间回扫。
 - 项目管理：UI 可切换/保存/删除项目（保留历史数据）。
 - 钱包管理：UI 可新增/删除监控钱包，支持单钱包重算。
+- Pool Discovery：支持 `PairCreated` 与 `getPair` 补查发现池子并落库。
+- Feature/Scoring：新增 30s/60s/3m 窗口特征快照与入场评分。
+- Robot Engine：支持 `observe/paper/live` 三种模式、三段式入场和风控暂停。
 - 统计面板：
   - 分钟消耗 SpentV
   - 大户榜
@@ -93,6 +96,16 @@ python virtuals_bot.py --config .\config.json --role backfill
 - `GET /mywallets`：我的钱包
 - `GET /event-delays`：录入延迟
 - `GET /project-tax`：项目累计税收
+- `GET /token-pools`：已发现池列表
+- `GET /pool-snapshots`：池子快照
+- `GET /robot/summary`：机器人运行摘要
+- `GET /robot/features`：特征快照
+- `GET /robot/scores`：评分快照
+- `GET /robot/trades`：机器人交易记录
+- `GET /robot/positions`：当前机器人仓位
+- `GET /robot/mode`：机器人模式
+- `POST /robot/mode`：切换机器人模式
+- `POST /robot/resume`：清除风险暂停
 - `POST /scan-range`：发起区间回扫
 - `POST /scan-jobs/{job_id}/cancel`：取消回扫任务
 

@@ -21,10 +21,19 @@ TRANSFER_TOPIC0 = (
     "0xddf252ad1be2c89b69c2b068fc378daa"
     "952ba7f163c4a11628f55a4df523b3ef"
 )
+PAIR_CREATED_TOPIC0 = (
+    "0x0d3648bd0f6ba80134a33ba9275ac585"
+    "d9d315f0ad8355cddefde31afa28d0e9"
+)
 DECIMALS_SELECTOR = "0x313ce567"
 TOKEN0_SELECTOR = "0x0dfe1681"
 TOKEN1_SELECTOR = "0xd21220a7"
 GET_RESERVES_SELECTOR = "0x0902f1ac"
+GET_PAIR_SELECTOR = "0xe6a43905"
+
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
+BASE_USDC_ADDRESS = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
 
 
 def normalize_address(addr: str) -> str:
@@ -39,6 +48,12 @@ def normalize_address(addr: str) -> str:
 
 def topic_address(addr: str) -> str:
     return "0x" + ("0" * 24) + normalize_address(addr)[2:]
+
+
+def encode_call_get_pair(token_a: str, token_b: str) -> str:
+    a = normalize_address(token_a)[2:].rjust(64, "0")
+    b = normalize_address(token_b)[2:].rjust(64, "0")
+    return GET_PAIR_SELECTOR + a + b
 
 
 def parse_hex_int(value: Optional[str]) -> int:
@@ -157,8 +172,18 @@ class AppConfig:
     top_n: int
     confirmations: int
     agg_minute_window: int
+    robot_mode: str
+    robot_total_capital_v: Decimal
+    robot_max_project_position_ratio: Decimal
+    robot_trial_position_ratio: Decimal
+    robot_confirm_position_ratio: Decimal
+    robot_stop_loss_ratio: Decimal
+    robot_max_consecutive_losses: int
+    robot_large_order_threshold_v: Decimal
     price_mode: str
     virtual_usdc_pair_addr: Optional[str]
+    pool_factory_addrs: List[str]
+    pool_discovery_quote_token_addrs: List[str]
     price_refresh_sec: int
     db_mode: str
     sqlite_path: str
@@ -261,6 +286,83 @@ def load_config(path: str) -> AppConfig:
             if str(x).strip()
         ]
 
+    robot_mode_raw = str(raw.get("ROBOT_MODE", "observe")).strip().lower()
+    robot_mode_alias = {
+        "observation": "observe",
+        "watch": "observe",
+        "sim": "paper",
+        "simulate": "paper",
+    }
+    robot_mode = robot_mode_alias.get(robot_mode_raw, robot_mode_raw)
+    if robot_mode not in {"observe", "paper", "live"}:
+        raise ValueError("ROBOT_MODE must be one of: observe, paper, live")
+
+    robot_total_capital_v = Decimal(str(raw.get("ROBOT_TOTAL_CAPITAL_V", "100")))
+    robot_max_project_position_ratio = Decimal(
+        str(raw.get("ROBOT_MAX_PROJECT_POSITION_RATIO", "0.20"))
+    )
+    robot_trial_position_ratio = Decimal(str(raw.get("ROBOT_TRIAL_POSITION_RATIO", "0.20")))
+    robot_confirm_position_ratio = Decimal(str(raw.get("ROBOT_CONFIRM_POSITION_RATIO", "0.30")))
+    robot_stop_loss_ratio = Decimal(str(raw.get("ROBOT_STOP_LOSS_RATIO", "0.10")))
+    robot_max_consecutive_losses = int(raw.get("ROBOT_MAX_CONSECUTIVE_LOSSES", 3))
+    robot_large_order_threshold_v = Decimal(str(raw.get("ROBOT_LARGE_ORDER_THRESHOLD_V", "1")))
+
+    if robot_total_capital_v <= 0:
+        raise ValueError("ROBOT_TOTAL_CAPITAL_V must be > 0")
+    if (
+        robot_max_project_position_ratio <= 0
+        or robot_max_project_position_ratio > 1
+    ):
+        raise ValueError("ROBOT_MAX_PROJECT_POSITION_RATIO must be in (0, 1]")
+    if robot_trial_position_ratio <= 0 or robot_trial_position_ratio > 1:
+        raise ValueError("ROBOT_TRIAL_POSITION_RATIO must be in (0, 1]")
+    if robot_confirm_position_ratio < 0 or robot_confirm_position_ratio > 1:
+        raise ValueError("ROBOT_CONFIRM_POSITION_RATIO must be in [0, 1]")
+    if robot_stop_loss_ratio <= 0 or robot_stop_loss_ratio >= 1:
+        raise ValueError("ROBOT_STOP_LOSS_RATIO must be in (0, 1)")
+    if robot_max_consecutive_losses <= 0:
+        raise ValueError("ROBOT_MAX_CONSECUTIVE_LOSSES must be >= 1")
+    if robot_large_order_threshold_v <= 0:
+        raise ValueError("ROBOT_LARGE_ORDER_THRESHOLD_V must be > 0")
+
+    pool_factory_raw = raw.get("POOL_FACTORY_ADDRS", [])
+    if isinstance(pool_factory_raw, str):
+        pool_factory_addrs = [
+            normalize_address(x.strip())
+            for x in pool_factory_raw.split(",")
+            if x and x.strip()
+        ]
+    elif isinstance(pool_factory_raw, list):
+        pool_factory_addrs = [
+            normalize_address(str(x).strip())
+            for x in pool_factory_raw
+            if str(x).strip()
+        ]
+    else:
+        pool_factory_addrs = []
+
+    pool_quote_raw = raw.get(
+        "POOL_DISCOVERY_QUOTE_TOKEN_ADDRS",
+        [virtual_token_addr, BASE_WETH_ADDRESS, BASE_USDC_ADDRESS],
+    )
+    if isinstance(pool_quote_raw, str):
+        pool_discovery_quote_token_addrs = [
+            normalize_address(x.strip())
+            for x in pool_quote_raw.split(",")
+            if x and x.strip()
+        ]
+    elif isinstance(pool_quote_raw, list):
+        pool_discovery_quote_token_addrs = [
+            normalize_address(str(x).strip())
+            for x in pool_quote_raw
+            if str(x).strip()
+        ]
+    else:
+        pool_discovery_quote_token_addrs = []
+    if virtual_token_addr not in pool_discovery_quote_token_addrs:
+        pool_discovery_quote_token_addrs.append(virtual_token_addr)
+    pool_discovery_quote_token_addrs = sorted(set(pool_discovery_quote_token_addrs))
+
     return AppConfig(
         chain_id=chain_id,
         ws_rpc_url=ws_rpc_url,
@@ -274,8 +376,18 @@ def load_config(path: str) -> AppConfig:
         top_n=int(raw.get("TOP_N", 50)),
         confirmations=int(raw.get("CONFIRMATIONS", 1)),
         agg_minute_window=int(raw.get("AGG_MINUTE_WINDOW", 0)),
+        robot_mode=robot_mode,
+        robot_total_capital_v=robot_total_capital_v,
+        robot_max_project_position_ratio=robot_max_project_position_ratio,
+        robot_trial_position_ratio=robot_trial_position_ratio,
+        robot_confirm_position_ratio=robot_confirm_position_ratio,
+        robot_stop_loss_ratio=robot_stop_loss_ratio,
+        robot_max_consecutive_losses=robot_max_consecutive_losses,
+        robot_large_order_threshold_v=robot_large_order_threshold_v,
         price_mode=price_mode,
         virtual_usdc_pair_addr=virtual_usdc_pair_addr,
+        pool_factory_addrs=pool_factory_addrs,
+        pool_discovery_quote_token_addrs=pool_discovery_quote_token_addrs,
         price_refresh_sec=int(raw.get("PRICE_REFRESH_SEC", 3)),
         db_mode=db_mode,
         sqlite_path=str(raw.get("SQLITE_PATH", "./data/virtuals_v11.db")),
@@ -595,6 +707,92 @@ class Storage:
                 tx_hash TEXT NOT NULL,
                 scanned_at INTEGER NOT NULL,
                 PRIMARY KEY(project, tx_hash)
+            );
+
+            CREATE TABLE IF NOT EXISTS token_pools (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_address TEXT NOT NULL,
+                pool_address TEXT NOT NULL,
+                factory_address TEXT NOT NULL,
+                quote_token TEXT NOT NULL,
+                is_primary INTEGER NOT NULL DEFAULT 0,
+                discovered_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(token_address, pool_address)
+            );
+            CREATE INDEX IF NOT EXISTS idx_token_pools_token_primary
+                ON token_pools(token_address, is_primary DESC, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS pool_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pool_address TEXT NOT NULL,
+                liquidity TEXT NOT NULL,
+                volume_1m TEXT NOT NULL,
+                tx_count_1m INTEGER NOT NULL,
+                unique_traders INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pool_snapshots_pool_time
+                ON pool_snapshots(pool_address, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS feature_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_address TEXT NOT NULL,
+                tx_count_30s INTEGER NOT NULL,
+                buy_sell_ratio TEXT NOT NULL,
+                volume_quote_60s TEXT NOT NULL,
+                unique_buyers INTEGER NOT NULL,
+                large_order_ratio TEXT NOT NULL,
+                timestamp INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_feature_snapshots_token_time
+                ON feature_snapshots(token_address, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS score_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_address TEXT NOT NULL,
+                heat_score TEXT NOT NULL,
+                structure_score TEXT NOT NULL,
+                phase_score TEXT NOT NULL,
+                risk_score TEXT NOT NULL,
+                entry_score TEXT NOT NULL,
+                timestamp INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_score_snapshots_token_time
+                ON score_snapshots(token_address, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS robot_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_address TEXT NOT NULL,
+                action TEXT NOT NULL,
+                price TEXT NOT NULL,
+                amount TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                tx_hash TEXT,
+                pnl_v TEXT,
+                mode TEXT NOT NULL,
+                timestamp INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_robot_trades_token_time
+                ON robot_trades(token_address, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS robot_positions (
+                project TEXT NOT NULL,
+                token_address TEXT NOT NULL,
+                stage INTEGER NOT NULL,
+                token_amount TEXT NOT NULL,
+                position_value_v TEXT NOT NULL,
+                avg_cost_v TEXT NOT NULL,
+                last_price_v TEXT NOT NULL,
+                last_volume_60s TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(project, token_address)
+            );
+
+            CREATE TABLE IF NOT EXISTS robot_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             );
             """
         )
@@ -1431,6 +1629,450 @@ class Storage:
             ).fetchone()
         return int(row["c"]) if row else 0
 
+    def upsert_token_pool(
+        self,
+        *,
+        token_address: str,
+        pool_address: str,
+        factory_address: str,
+        quote_token: str,
+        is_primary: bool,
+        discovered_at: Optional[int] = None,
+    ) -> None:
+        token_address = normalize_address(token_address)
+        pool_address = normalize_address(pool_address)
+        factory = normalize_address(factory_address) if factory_address else ZERO_ADDRESS
+        quote = normalize_address(quote_token)
+        now = int(time.time())
+        ts = int(discovered_at) if discovered_at and discovered_at > 0 else now
+        cur = self.conn.cursor()
+        cur.execute("BEGIN")
+        try:
+            if is_primary:
+                cur.execute(
+                    """
+                    UPDATE token_pools
+                    SET is_primary = 0, updated_at = ?
+                    WHERE token_address = ?
+                    """,
+                    (now, token_address),
+                )
+            cur.execute(
+                """
+                INSERT INTO token_pools(
+                    token_address, pool_address, factory_address, quote_token,
+                    is_primary, discovered_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_address, pool_address) DO UPDATE SET
+                    factory_address = excluded.factory_address,
+                    quote_token = excluded.quote_token,
+                    is_primary = CASE
+                        WHEN excluded.is_primary = 1 THEN 1
+                        ELSE token_pools.is_primary
+                    END,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    token_address,
+                    pool_address,
+                    factory,
+                    quote,
+                    1 if is_primary else 0,
+                    ts,
+                    now,
+                ),
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def list_token_pools(
+        self, token_address: Optional[str] = None, limit_n: int = 200
+    ) -> List[Dict[str, Any]]:
+        limit_n = max(1, min(int(limit_n), 1000))
+        if token_address:
+            token_address = normalize_address(token_address)
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM token_pools
+                WHERE token_address = ?
+                ORDER BY is_primary DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (token_address, limit_n),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM token_pools
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit_n,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_primary_pool(self, token_address: str) -> Optional[Dict[str, Any]]:
+        token_address = normalize_address(token_address)
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM token_pools
+            WHERE token_address = ?
+            ORDER BY is_primary DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (token_address,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def insert_pool_snapshot(
+        self,
+        *,
+        pool_address: str,
+        liquidity: Decimal,
+        volume_1m: Decimal,
+        tx_count_1m: int,
+        unique_traders: int,
+        timestamp: int,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO pool_snapshots(
+                pool_address, liquidity, volume_1m, tx_count_1m, unique_traders, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalize_address(pool_address),
+                decimal_to_str(liquidity, 18),
+                decimal_to_str(volume_1m, 18),
+                int(tx_count_1m),
+                int(unique_traders),
+                int(timestamp),
+            ),
+        )
+        self.conn.commit()
+
+    def query_pool_snapshots(self, pool_address: str, limit_n: int = 100) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM pool_snapshots
+            WHERE pool_address = ?
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (normalize_address(pool_address), max(1, min(int(limit_n), 500))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_feature_snapshot(
+        self,
+        *,
+        token_address: str,
+        tx_count_30s: int,
+        buy_sell_ratio: Decimal,
+        volume_quote_60s: Decimal,
+        unique_buyers: int,
+        large_order_ratio: Decimal,
+        timestamp: int,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO feature_snapshots(
+                token_address, tx_count_30s, buy_sell_ratio, volume_quote_60s,
+                unique_buyers, large_order_ratio, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalize_address(token_address),
+                int(tx_count_30s),
+                decimal_to_str(buy_sell_ratio, 18),
+                decimal_to_str(volume_quote_60s, 18),
+                int(unique_buyers),
+                decimal_to_str(large_order_ratio, 18),
+                int(timestamp),
+            ),
+        )
+        self.conn.commit()
+
+    def query_feature_snapshots(
+        self, token_address: str, limit_n: int = 100
+    ) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM feature_snapshots
+            WHERE token_address = ?
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (normalize_address(token_address), max(1, min(int(limit_n), 500))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_latest_feature_snapshot(self, token_address: str) -> Optional[Dict[str, Any]]:
+        rows = self.query_feature_snapshots(token_address, limit_n=1)
+        return rows[0] if rows else None
+
+    def insert_score_snapshot(
+        self,
+        *,
+        token_address: str,
+        heat_score: Decimal,
+        structure_score: Decimal,
+        phase_score: Decimal,
+        risk_score: Decimal,
+        entry_score: Decimal,
+        timestamp: int,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO score_snapshots(
+                token_address, heat_score, structure_score, phase_score, risk_score, entry_score, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalize_address(token_address),
+                decimal_to_str(heat_score, 18),
+                decimal_to_str(structure_score, 18),
+                decimal_to_str(phase_score, 18),
+                decimal_to_str(risk_score, 18),
+                decimal_to_str(entry_score, 18),
+                int(timestamp),
+            ),
+        )
+        self.conn.commit()
+
+    def query_score_snapshots(self, token_address: str, limit_n: int = 100) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM score_snapshots
+            WHERE token_address = ?
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (normalize_address(token_address), max(1, min(int(limit_n), 500))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_latest_score_snapshot(self, token_address: str) -> Optional[Dict[str, Any]]:
+        rows = self.query_score_snapshots(token_address, limit_n=1)
+        return rows[0] if rows else None
+
+    def insert_robot_trade(
+        self,
+        *,
+        token_address: str,
+        action: str,
+        price: Decimal,
+        amount: Decimal,
+        reason: str,
+        mode: str,
+        timestamp: int,
+        tx_hash: Optional[str] = None,
+        pnl_v: Optional[Decimal] = None,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO robot_trades(
+                token_address, action, price, amount, reason, tx_hash, pnl_v, mode, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalize_address(token_address),
+                str(action).strip().lower(),
+                decimal_to_str(price, 18),
+                decimal_to_str(amount, 18),
+                str(reason),
+                str(tx_hash).strip() if tx_hash else None,
+                decimal_to_str(pnl_v, 18) if pnl_v is not None else None,
+                str(mode).strip().lower(),
+                int(timestamp),
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def query_robot_trades(
+        self, token_address: Optional[str] = None, limit_n: int = 200
+    ) -> List[Dict[str, Any]]:
+        limit_n = max(1, min(int(limit_n), 1000))
+        if token_address:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM robot_trades
+                WHERE token_address = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (normalize_address(token_address), limit_n),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM robot_trades
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (limit_n,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_robot_position(self, project: str, token_address: str) -> Optional[Dict[str, Any]]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM robot_positions
+            WHERE project = ? AND token_address = ?
+            """,
+            (str(project).strip(), normalize_address(token_address)),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_robot_positions(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
+        if project:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM robot_positions
+                WHERE project = ?
+                ORDER BY updated_at DESC
+                """,
+                (str(project).strip(),),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM robot_positions
+                ORDER BY updated_at DESC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_robot_position(
+        self,
+        *,
+        project: str,
+        token_address: str,
+        stage: int,
+        token_amount: Decimal,
+        position_value_v: Decimal,
+        avg_cost_v: Decimal,
+        last_price_v: Decimal,
+        last_volume_60s: Decimal,
+        updated_at: int,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO robot_positions(
+                project, token_address, stage, token_amount, position_value_v,
+                avg_cost_v, last_price_v, last_volume_60s, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project, token_address) DO UPDATE SET
+                stage = excluded.stage,
+                token_amount = excluded.token_amount,
+                position_value_v = excluded.position_value_v,
+                avg_cost_v = excluded.avg_cost_v,
+                last_price_v = excluded.last_price_v,
+                last_volume_60s = excluded.last_volume_60s,
+                updated_at = excluded.updated_at
+            """,
+            (
+                str(project).strip(),
+                normalize_address(token_address),
+                int(stage),
+                decimal_to_str(token_amount, 18),
+                decimal_to_str(position_value_v, 18),
+                decimal_to_str(avg_cost_v, 18),
+                decimal_to_str(last_price_v, 18),
+                decimal_to_str(last_volume_60s, 18),
+                int(updated_at),
+            ),
+        )
+        self.conn.commit()
+
+    def delete_robot_position(self, project: str, token_address: str) -> None:
+        self.conn.execute(
+            """
+            DELETE FROM robot_positions
+            WHERE project = ? AND token_address = ?
+            """,
+            (str(project).strip(), normalize_address(token_address)),
+        )
+        self.conn.commit()
+
+    def get_robot_state(self, key: str) -> Optional[str]:
+        row = self.conn.execute(
+            """
+            SELECT value
+            FROM robot_state
+            WHERE key = ?
+            """,
+            (str(key),),
+        ).fetchone()
+        return str(row["value"]) if row else None
+
+    def set_robot_state(self, key: str, value: str) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO robot_state(key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (str(key), str(value), int(time.time())),
+        )
+        self.conn.commit()
+
+    def list_recent_events_for_token(
+        self, token_address: str, since_ts: int, limit_n: int = 2000
+    ) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT
+                project,
+                token_addr,
+                buyer,
+                spent_v_est,
+                spent_v_actual,
+                cost_v,
+                anomaly,
+                block_timestamp
+            FROM events
+            WHERE token_addr = ? AND block_timestamp >= ?
+            ORDER BY block_timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (
+                normalize_address(token_address),
+                int(since_ts),
+                max(1, min(int(limit_n), 10000)),
+            ),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_latest_event_for_token(self, token_address: str) -> Optional[Dict[str, Any]]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM events
+            WHERE token_addr = ?
+            ORDER BY block_timestamp DESC, id DESC
+            LIMIT 1
+            """,
+            (normalize_address(token_address),),
+        ).fetchone()
+        return dict(row) if row else None
+
 
 class EventBusStorage:
     def __init__(self, db_path: str):
@@ -1864,6 +2506,7 @@ class VirtualsBot:
         self.pending_max_block = 0
         self.decimals_cache: Dict[str, int] = {}
         self.block_ts_cache: Dict[int, int] = {}
+        self.pool_discovery_checked_calls: Set[Tuple[str, str, str]] = set()
         self.scan_jobs: Dict[str, Dict[str, Any]] = {}
         self.scan_lock = asyncio.Lock()
         self.stats: Dict[str, Any] = {
@@ -1880,6 +2523,24 @@ class VirtualsBot:
             "started_at": int(time.time()),
             "role": role,
         }
+        raw_losses = self.storage.get_robot_state("consecutive_losses")
+        try:
+            self.robot_consecutive_losses = max(0, int(str(raw_losses or "0")))
+        except Exception:
+            self.robot_consecutive_losses = 0
+        runtime_robot_mode = (self.storage.get_robot_state("runtime_robot_mode") or "").strip().lower()
+        if runtime_robot_mode in {"observe", "paper", "live"}:
+            self.cfg.robot_mode = runtime_robot_mode
+        else:
+            self.storage.set_robot_state("runtime_robot_mode", self.cfg.robot_mode)
+        self.robot_paused_due_risk = parse_bool_like(self.storage.get_robot_state("risk_paused"))
+        if self.storage.get_robot_state("consecutive_losses") is None:
+            self.storage.set_robot_state("consecutive_losses", str(self.robot_consecutive_losses))
+        if self.storage.get_robot_state("risk_paused") is None:
+            self.storage.set_robot_state(
+                "risk_paused", "1" if self.robot_paused_due_risk else "0"
+            )
+        self.robot_lock = asyncio.Lock()
         self.last_launch_cfg_rev = self.storage.get_state("launch_configs_rev") or ""
         self.last_my_wallets_rev = self.storage.get_state("my_wallets_rev") or ""
 
@@ -2053,7 +2714,454 @@ class VirtualsBot:
         self.stats["inserted_events"] += len(inserted)
         self.stats["last_flush_at"] = int(time.time())
         self.write_inserted_events_jsonl(inserted)
+        if inserted and self.is_writer_role:
+            try:
+                self.run_post_ingest_pipeline(inserted)
+            except Exception as e:
+                self.storage.save_dead_letter(
+                    tx_hash="post_ingest_pipeline",
+                    reason=f"post_ingest_pipeline_failed: {type(e).__name__}: {e}",
+                    payload={"inserted": len(inserted)},
+                )
+                self.stats["dead_letters"] += 1
         return len(inserted)
+
+    def _to_decimal(self, value: Any, default: str = "0") -> Decimal:
+        try:
+            if value is None:
+                return Decimal(default)
+            return Decimal(str(value))
+        except Exception:
+            return Decimal(default)
+
+    def _safe_div(self, numerator: Decimal, denominator: Decimal) -> Decimal:
+        if denominator == 0:
+            return Decimal(0)
+        return numerator / denominator
+
+    def _clamp_score(self, value: Decimal) -> Decimal:
+        if value < 0:
+            return Decimal(0)
+        if value > 100:
+            return Decimal(100)
+        return value
+
+    def _set_robot_risk_pause(self, paused: bool) -> None:
+        self.robot_paused_due_risk = bool(paused)
+        self.storage.set_robot_state("risk_paused", "1" if paused else "0")
+
+    def _set_robot_consecutive_losses(self, value: int) -> None:
+        self.robot_consecutive_losses = max(0, int(value))
+        self.storage.set_robot_state("consecutive_losses", str(self.robot_consecutive_losses))
+        if self.robot_consecutive_losses >= self.cfg.robot_max_consecutive_losses:
+            self._set_robot_risk_pause(True)
+
+    def _is_robot_mode_active(self) -> bool:
+        return self.cfg.robot_mode in {"paper", "live"}
+
+    def _is_robot_entry_allowed(self) -> bool:
+        return self._is_robot_mode_active() and (not self.robot_paused_due_risk)
+
+    def _sum_project_position_value(self, project: str) -> Decimal:
+        total = Decimal(0)
+        for row in self.storage.list_robot_positions(project=project):
+            total += self._to_decimal(row.get("position_value_v"), "0")
+        return total
+
+    def _discover_pool_from_event(self, event: Dict[str, Any]) -> None:
+        token_addr = normalize_address(str(event["token_addr"]))
+        pool_addr = normalize_address(str(event["internal_pool"]))
+        discovered_at = int(event.get("block_timestamp", int(time.time())))
+        self.storage.upsert_token_pool(
+            token_address=token_addr,
+            pool_address=pool_addr,
+            factory_address=ZERO_ADDRESS,
+            quote_token=self.cfg.virtual_token_addr,
+            is_primary=True,
+            discovered_at=discovered_at,
+        )
+
+    def _build_feature_context(
+        self, project: str, token_address: str, now_ts: int
+    ) -> Optional[Dict[str, Any]]:
+        token_address = normalize_address(token_address)
+        recent = self.storage.list_recent_events_for_token(token_address, now_ts - 180)
+        if not recent:
+            return None
+        rows = [x for x in recent if str(x.get("project", "")).strip() == project]
+        if not rows:
+            return None
+
+        win_30 = [x for x in rows if int(x["block_timestamp"]) >= now_ts - 30]
+        win_60 = [x for x in rows if int(x["block_timestamp"]) >= now_ts - 60]
+        win_prev_60 = [
+            x
+            for x in rows
+            if (now_ts - 120) <= int(x["block_timestamp"]) < (now_ts - 60)
+        ]
+
+        tx_count_30s = len(win_30)
+        tx_count_60s = len(win_60)
+        buy_count_30s = sum(1 for x in win_30 if self._to_decimal(x.get("spent_v_est")) > 0)
+        sell_count_30s = sum(1 for x in win_30 if self._to_decimal(x.get("spent_v_est")) <= 0)
+        buy_sell_ratio = self._safe_div(
+            Decimal(buy_count_30s + 1), Decimal(sell_count_30s + 1)
+        )
+
+        volume_60s = sum((self._to_decimal(x.get("spent_v_est")) for x in win_60), Decimal(0))
+        volume_prev_60 = sum(
+            (self._to_decimal(x.get("spent_v_est")) for x in win_prev_60), Decimal(0)
+        )
+        unique_buyers = len({str(x.get("buyer", "")).lower() for x in win_60 if x.get("buyer")})
+        unique_prev_60 = len(
+            {str(x.get("buyer", "")).lower() for x in win_prev_60 if x.get("buyer")}
+        )
+        unique_buyers_growth = self._safe_div(
+            Decimal(unique_buyers - unique_prev_60), Decimal(max(1, unique_prev_60))
+        )
+
+        large_orders = sum(
+            1
+            for x in win_60
+            if self._to_decimal(x.get("spent_v_est")) >= self.cfg.robot_large_order_threshold_v
+        )
+        large_order_ratio = self._safe_div(Decimal(large_orders), Decimal(max(1, len(win_60))))
+
+        anomaly_count_60 = sum(1 for x in win_60 if int(x.get("anomaly", 0)) == 1)
+        anomaly_rate_60 = self._safe_div(Decimal(anomaly_count_60), Decimal(max(1, len(win_60))))
+
+        gap_sum = Decimal(0)
+        gap_count = 0
+        for x in win_60:
+            spent_est = self._to_decimal(x.get("spent_v_est"))
+            spent_actual = x.get("spent_v_actual")
+            if spent_est <= 0 or spent_actual is None:
+                continue
+            gap_sum += abs(self._to_decimal(spent_actual) - spent_est) / spent_est
+            gap_count += 1
+        breakeven_gap_ratio = self._safe_div(gap_sum, Decimal(max(1, gap_count)))
+
+        latest_row = max(rows, key=lambda x: int(x.get("block_timestamp", 0)))
+        price_now = self._to_decimal(latest_row.get("cost_v"), "0")
+        prev_candidates = [
+            x for x in rows if int(x.get("block_timestamp", 0)) <= (now_ts - 60)
+        ]
+        if prev_candidates:
+            prev_row = max(prev_candidates, key=lambda x: int(x.get("block_timestamp", 0)))
+            price_prev_60 = self._to_decimal(prev_row.get("cost_v"), "0")
+        else:
+            price_prev_60 = price_now
+        trend_up = (
+            price_now > 0
+            and price_prev_60 > 0
+            and price_now > price_prev_60
+            and volume_60s > volume_prev_60
+            and volume_60s > 0
+        )
+
+        return {
+            "project": project,
+            "token_address": token_address,
+            "timestamp": int(now_ts),
+            "tx_count_30s": tx_count_30s,
+            "tx_count_60s": tx_count_60s,
+            "buy_sell_ratio": buy_sell_ratio,
+            "volume_60s": volume_60s,
+            "volume_prev_60": volume_prev_60,
+            "unique_buyers": unique_buyers,
+            "unique_buyers_growth": unique_buyers_growth,
+            "large_order_ratio": large_order_ratio,
+            "anomaly_rate_60": anomaly_rate_60,
+            "breakeven_gap_ratio": breakeven_gap_ratio,
+            "price_now": price_now,
+            "price_prev_60": price_prev_60,
+            "trend_up": trend_up,
+        }
+
+    def _compute_scores(self, ctx: Dict[str, Any]) -> Dict[str, Decimal]:
+        tx_count_30s = int(ctx["tx_count_30s"])
+        volume_60s = self._to_decimal(ctx["volume_60s"])
+        unique_buyers = int(ctx["unique_buyers"])
+        buy_sell_ratio = self._to_decimal(ctx["buy_sell_ratio"])
+        unique_growth = self._to_decimal(ctx["unique_buyers_growth"])
+        large_order_ratio = self._to_decimal(ctx["large_order_ratio"])
+        anomaly_rate_60 = self._to_decimal(ctx["anomaly_rate_60"])
+        gap_ratio = self._to_decimal(ctx["breakeven_gap_ratio"])
+        price_now = self._to_decimal(ctx["price_now"])
+        price_prev_60 = self._to_decimal(ctx["price_prev_60"])
+        volume_prev_60 = self._to_decimal(ctx["volume_prev_60"])
+
+        heat_score = (
+            min(Decimal(40), Decimal(tx_count_30s) * Decimal("3.5"))
+            + min(Decimal(40), volume_60s * Decimal("5"))
+            + min(Decimal(20), Decimal(unique_buyers) * Decimal("2.5"))
+        )
+        buy_sell_factor = self._safe_div(buy_sell_ratio, buy_sell_ratio + Decimal(1))
+        growth_capped = max(Decimal("-1"), min(Decimal("1"), unique_growth))
+        structure_score = (
+            buy_sell_factor * Decimal(40)
+            + (growth_capped + Decimal(1)) * Decimal("15")
+            + large_order_ratio * Decimal(30)
+            + (Decimal(10) if volume_60s > 0 else Decimal(0))
+        )
+
+        phase_score = Decimal(20)
+        if price_now > price_prev_60 and price_prev_60 > 0:
+            phase_score += Decimal(30)
+        if volume_60s > volume_prev_60 and volume_prev_60 > 0:
+            phase_score += Decimal(25)
+        if volume_prev_60 > 0:
+            growth = self._safe_div(volume_60s - volume_prev_60, volume_prev_60)
+            phase_score += min(Decimal(25), max(Decimal(0), growth * Decimal(25)))
+        elif volume_60s > 0:
+            phase_score += Decimal(10)
+
+        risk_score = (
+            anomaly_rate_60 * Decimal(55)
+            + max(Decimal(0), -unique_growth) * Decimal(25)
+            + min(Decimal(20), gap_ratio * Decimal(40))
+        )
+        if price_now <= 0:
+            risk_score += Decimal(20)
+
+        heat_score = self._clamp_score(heat_score)
+        structure_score = self._clamp_score(structure_score)
+        phase_score = self._clamp_score(phase_score)
+        risk_score = self._clamp_score(risk_score)
+        entry_score = self._clamp_score(
+            Decimal("0.45") * heat_score
+            + Decimal("0.30") * structure_score
+            + Decimal("0.15") * phase_score
+            - Decimal("0.20") * risk_score
+        )
+        return {
+            "heat_score": heat_score,
+            "structure_score": structure_score,
+            "phase_score": phase_score,
+            "risk_score": risk_score,
+            "entry_score": entry_score,
+        }
+
+    def _upsert_pool_snapshot_from_context(self, ctx: Dict[str, Any]) -> None:
+        primary = self.storage.get_primary_pool(ctx["token_address"])
+        if not primary:
+            return
+        volume_1m = self._to_decimal(ctx["volume_60s"])
+        liquidity_proxy = max(Decimal(0), volume_1m * Decimal(3))
+        self.storage.insert_pool_snapshot(
+            pool_address=primary["pool_address"],
+            liquidity=liquidity_proxy,
+            volume_1m=volume_1m,
+            tx_count_1m=int(ctx["tx_count_60s"]),
+            unique_traders=int(ctx["unique_buyers"]),
+            timestamp=int(ctx["timestamp"]),
+        )
+
+    def _record_robot_trade(
+        self,
+        *,
+        token_address: str,
+        action: str,
+        price: Decimal,
+        amount: Decimal,
+        reason: str,
+        timestamp: int,
+        pnl_v: Optional[Decimal] = None,
+    ) -> None:
+        mode = self.cfg.robot_mode
+        tx_hash = None
+        if mode in {"paper", "live"}:
+            tx_hash = f"{mode}-sim-{int(timestamp)}-{token_address[-6:]}"
+        self.storage.insert_robot_trade(
+            token_address=token_address,
+            action=action,
+            price=price,
+            amount=amount,
+            reason=reason,
+            tx_hash=tx_hash,
+            pnl_v=pnl_v,
+            mode=mode,
+            timestamp=timestamp,
+        )
+
+    def _evaluate_robot_strategy(self, ctx: Dict[str, Any], scores: Dict[str, Decimal]) -> None:
+        project = str(ctx["project"])
+        token_address = normalize_address(str(ctx["token_address"]))
+        now_ts = int(ctx["timestamp"])
+        price_now = self._to_decimal(ctx["price_now"])
+        volume_60s = self._to_decimal(ctx["volume_60s"])
+        entry_score = self._to_decimal(scores["entry_score"])
+
+        row = self.storage.get_robot_position(project, token_address)
+        stage = int(row["stage"]) if row else 0
+        token_amount = self._to_decimal(row["token_amount"]) if row else Decimal(0)
+        position_value_v = self._to_decimal(row["position_value_v"]) if row else Decimal(0)
+        avg_cost_v = self._to_decimal(row["avg_cost_v"]) if row else Decimal(0)
+        last_price_v = self._to_decimal(row["last_price_v"]) if row else Decimal(0)
+        last_volume_60s = self._to_decimal(row["last_volume_60s"]) if row else Decimal(0)
+
+        if self._is_robot_mode_active() and token_amount > 0 and avg_cost_v > 0 and price_now > 0:
+            stop_price = avg_cost_v * (Decimal(1) - self.cfg.robot_stop_loss_ratio)
+            if price_now <= stop_price:
+                sell_value = token_amount * price_now
+                pnl_v = sell_value - position_value_v
+                self._record_robot_trade(
+                    token_address=token_address,
+                    action="sell",
+                    price=price_now,
+                    amount=sell_value,
+                    reason=f"stop_loss@{decimal_to_str(stop_price, 18)}",
+                    timestamp=now_ts,
+                    pnl_v=pnl_v,
+                )
+                self.storage.delete_robot_position(project, token_address)
+                if pnl_v < 0:
+                    self._set_robot_consecutive_losses(self.robot_consecutive_losses + 1)
+                else:
+                    self._set_robot_consecutive_losses(0)
+                    self._set_robot_risk_pause(False)
+                return
+
+        if not self._is_robot_mode_active():
+            if row:
+                self.storage.upsert_robot_position(
+                    project=project,
+                    token_address=token_address,
+                    stage=stage,
+                    token_amount=token_amount,
+                    position_value_v=position_value_v,
+                    avg_cost_v=avg_cost_v,
+                    last_price_v=price_now if price_now > 0 else last_price_v,
+                    last_volume_60s=volume_60s,
+                    updated_at=now_ts,
+                )
+            return
+
+        if price_now <= 0:
+            return
+
+        total_capital_v = self.cfg.robot_total_capital_v
+        max_project_v = total_capital_v * self.cfg.robot_max_project_position_ratio
+        trial_v = min(
+            max_project_v * self.cfg.robot_trial_position_ratio,
+            total_capital_v * Decimal("0.05"),
+        )
+        confirm_v = max_project_v * self.cfg.robot_confirm_position_ratio
+        trend_v = max(Decimal(0), max_project_v - trial_v - confirm_v)
+        current_project_v = self._sum_project_position_value(project)
+        remaining_v = max(Decimal(0), max_project_v - current_project_v)
+
+        if not self._is_robot_entry_allowed():
+            if row:
+                self.storage.upsert_robot_position(
+                    project=project,
+                    token_address=token_address,
+                    stage=stage,
+                    token_amount=token_amount,
+                    position_value_v=position_value_v,
+                    avg_cost_v=avg_cost_v,
+                    last_price_v=price_now,
+                    last_volume_60s=volume_60s,
+                    updated_at=now_ts,
+                )
+            return
+
+        action_amount_v = Decimal(0)
+        next_stage = stage
+        reason = ""
+
+        if stage <= 0 and entry_score >= Decimal(70):
+            action_amount_v = min(trial_v, remaining_v)
+            next_stage = 1
+            reason = f"trial_entry(score={decimal_to_str(entry_score, 4)})"
+        elif stage == 1 and entry_score >= Decimal(82):
+            action_amount_v = min(confirm_v, remaining_v)
+            next_stage = 2
+            reason = f"confirm_add(score={decimal_to_str(entry_score, 4)})"
+        elif stage >= 2 and bool(ctx["trend_up"]) and price_now > last_price_v and volume_60s > last_volume_60s:
+            action_amount_v = min(trend_v, remaining_v)
+            next_stage = 3
+            reason = f"trend_add(score={decimal_to_str(entry_score, 4)})"
+
+        if action_amount_v > 0:
+            token_delta = action_amount_v / price_now
+            new_token_amount = token_amount + token_delta
+            new_position_value_v = position_value_v + action_amount_v
+            new_avg_cost_v = self._safe_div(new_position_value_v, new_token_amount)
+            self.storage.upsert_robot_position(
+                project=project,
+                token_address=token_address,
+                stage=next_stage,
+                token_amount=new_token_amount,
+                position_value_v=new_position_value_v,
+                avg_cost_v=new_avg_cost_v,
+                last_price_v=price_now,
+                last_volume_60s=volume_60s,
+                updated_at=now_ts,
+            )
+            self._record_robot_trade(
+                token_address=token_address,
+                action="buy",
+                price=price_now,
+                amount=action_amount_v,
+                reason=reason,
+                timestamp=now_ts,
+            )
+        elif row:
+            self.storage.upsert_robot_position(
+                project=project,
+                token_address=token_address,
+                stage=stage,
+                token_amount=token_amount,
+                position_value_v=position_value_v,
+                avg_cost_v=avg_cost_v,
+                last_price_v=price_now,
+                last_volume_60s=volume_60s,
+                updated_at=now_ts,
+            )
+
+    def run_post_ingest_pipeline(self, inserted_events: List[Dict[str, Any]]) -> None:
+        if not inserted_events:
+            return
+        latest_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for event in inserted_events:
+            project = str(event["project"]).strip()
+            token_address = normalize_address(str(event["token_addr"]))
+            key = (project, token_address)
+            old = latest_by_key.get(key)
+            if (not old) or int(event["block_timestamp"]) >= int(old["block_timestamp"]):
+                latest_by_key[key] = event
+            self._discover_pool_from_event(event)
+
+        for (project, token_address), event in latest_by_key.items():
+            now_ts = int(event["block_timestamp"])
+            ctx = self._build_feature_context(project, token_address, now_ts)
+            if not ctx:
+                continue
+
+            self.storage.insert_feature_snapshot(
+                token_address=token_address,
+                tx_count_30s=int(ctx["tx_count_30s"]),
+                buy_sell_ratio=self._to_decimal(ctx["buy_sell_ratio"]),
+                volume_quote_60s=self._to_decimal(ctx["volume_60s"]),
+                unique_buyers=int(ctx["unique_buyers"]),
+                large_order_ratio=self._to_decimal(ctx["large_order_ratio"]),
+                timestamp=now_ts,
+            )
+
+            scores = self._compute_scores(ctx)
+            self.storage.insert_score_snapshot(
+                token_address=token_address,
+                heat_score=scores["heat_score"],
+                structure_score=scores["structure_score"],
+                phase_score=scores["phase_score"],
+                risk_score=scores["risk_score"],
+                entry_score=scores["entry_score"],
+                timestamp=now_ts,
+            )
+
+            self._upsert_pool_snapshot_from_context(ctx)
+            self._evaluate_robot_strategy(ctx, scores)
 
     async def emit_parsed_events(self, events: List[Dict[str, Any]], block_number: int) -> None:
         if not events:
@@ -2192,6 +3300,119 @@ class VirtualsBot:
             if from_addr == launch.internal_pool_addr or to_addr == launch.internal_pool_addr:
                 return True
         return False
+
+    def _decode_pair_from_log_data(self, data_hex: Optional[str]) -> Optional[str]:
+        if not data_hex:
+            return None
+        raw = str(data_hex).lower()
+        if raw.startswith("0x"):
+            raw = raw[2:]
+        if len(raw) < 64:
+            return None
+        try:
+            pair_addr = "0x" + raw[0:64][-40:]
+            return normalize_address(pair_addr)
+        except Exception:
+            return None
+
+    async def discover_pools_from_receipt(
+        self, receipt: Dict[str, Any], timestamp: int, rpc: Optional[RPCClient] = None
+    ) -> None:
+        logs = receipt.get("logs", []) or []
+        quote_set = set(self.cfg.pool_discovery_quote_token_addrs)
+        factory_set = set(self.cfg.pool_factory_addrs)
+
+        candidate_tokens: Set[str] = set()
+        for lg in logs:
+            topics = lg.get("topics") or []
+            token_addr_raw = lg.get("address")
+            with contextlib.suppress(Exception):
+                token_addr = normalize_address(str(token_addr_raw))
+                if token_addr not in quote_set:
+                    candidate_tokens.add(token_addr)
+
+            if len(topics) < 3:
+                continue
+            if str(topics[0]).lower() != PAIR_CREATED_TOPIC0:
+                continue
+
+            with contextlib.suppress(Exception):
+                factory_addr = normalize_address(str(lg.get("address", "")))
+                if factory_set and factory_addr not in factory_set:
+                    continue
+                token0 = normalize_address(decode_topic_address(str(topics[1])))
+                token1 = normalize_address(decode_topic_address(str(topics[2])))
+                pair_addr = self._decode_pair_from_log_data(lg.get("data"))
+                if not pair_addr:
+                    continue
+
+                if token1 in quote_set and token0 != token1:
+                    self.storage.upsert_token_pool(
+                        token_address=token0,
+                        pool_address=pair_addr,
+                        factory_address=factory_addr,
+                        quote_token=token1,
+                        is_primary=(token1 == self.cfg.virtual_token_addr),
+                        discovered_at=timestamp,
+                    )
+                if token0 in quote_set and token1 != token0:
+                    self.storage.upsert_token_pool(
+                        token_address=token1,
+                        pool_address=pair_addr,
+                        factory_address=factory_addr,
+                        quote_token=token0,
+                        is_primary=(token0 == self.cfg.virtual_token_addr),
+                        discovered_at=timestamp,
+                    )
+
+        if not candidate_tokens or not self.cfg.pool_factory_addrs:
+            return
+        await self.discover_pools_via_get_pair(candidate_tokens, timestamp, rpc=rpc)
+
+    async def discover_pools_via_get_pair(
+        self, token_addresses: Set[str], timestamp: int, rpc: Optional[RPCClient] = None
+    ) -> None:
+        rpc_client = rpc or self.http_rpc
+        if not self.cfg.pool_factory_addrs:
+            return
+        quote_addrs = set(self.cfg.pool_discovery_quote_token_addrs)
+
+        for token_addr in token_addresses:
+            token_addr = normalize_address(token_addr)
+            existing = self.storage.get_primary_pool(token_addr)
+            if existing:
+                continue
+            for factory_addr in self.cfg.pool_factory_addrs:
+                factory_addr = normalize_address(factory_addr)
+                for quote_addr in quote_addrs:
+                    quote_addr = normalize_address(quote_addr)
+                    if token_addr == quote_addr:
+                        continue
+                    cache_key = (token_addr, factory_addr, quote_addr)
+                    if cache_key in self.pool_discovery_checked_calls:
+                        continue
+                    self.pool_discovery_checked_calls.add(cache_key)
+                    call_data = encode_call_get_pair(token_addr, quote_addr)
+                    with contextlib.suppress(Exception):
+                        pair_hex = await rpc_client.eth_call(factory_addr, call_data)
+                        if not pair_hex:
+                            continue
+                        raw = str(pair_hex)
+                        if raw.startswith("0x"):
+                            raw = raw[2:]
+                        if len(raw) < 64:
+                            continue
+                        pair_addr = normalize_address("0x" + raw[-40:])
+                        if pair_addr == ZERO_ADDRESS:
+                            continue
+                        self.storage.upsert_token_pool(
+                            token_address=token_addr,
+                            pool_address=pair_addr,
+                            factory_address=factory_addr,
+                            quote_token=quote_addr,
+                            is_primary=(quote_addr == self.cfg.virtual_token_addr),
+                            discovered_at=timestamp,
+                        )
 
     async def parse_receipt_for_launch(
         self,
@@ -2382,6 +3603,7 @@ class VirtualsBot:
             block_number = int(receipt["blockNumber"], 16)
             timestamp = await self.get_block_timestamp(block_number, rpc=rpc_client)
             virtual_price_usd, is_price_stale = await self.price_service.get_price()
+            await self.discover_pools_from_receipt(receipt, timestamp, rpc=rpc_client)
 
             all_events: List[Dict[str, Any]] = []
             logs = receipt.get("logs", [])
@@ -2944,6 +4166,9 @@ class VirtualsBot:
                 "runtimeUiLastSeenAt": runtime_data["runtimeUiLastSeenAt"],
                 "runtimeUiHeartbeatTimeoutSec": runtime_data["runtimeUiHeartbeatTimeoutSec"],
                 "runtimePauseUpdatedAt": runtime_data["updatedAt"],
+                "robotMode": self.cfg.robot_mode,
+                "robotRiskPaused": bool(self.robot_paused_due_risk),
+                "robotConsecutiveLosses": int(self.robot_consecutive_losses),
             }
         )
 
@@ -3266,6 +4491,24 @@ class VirtualsBot:
                     "runtime_ui_last_seen_at": runtime_data["runtimeUiLastSeenAt"],
                     "runtime_ui_heartbeat_timeout_sec": runtime_data["runtimeUiHeartbeatTimeoutSec"],
                 },
+                "robot": {
+                    "mode": self.cfg.robot_mode,
+                    "risk_paused": bool(self.robot_paused_due_risk),
+                    "consecutive_losses": int(self.robot_consecutive_losses),
+                    "max_consecutive_losses": int(self.cfg.robot_max_consecutive_losses),
+                    "total_capital_v": decimal_to_str(self.cfg.robot_total_capital_v, 18),
+                    "max_project_position_ratio": decimal_to_str(
+                        self.cfg.robot_max_project_position_ratio, 6
+                    ),
+                    "trial_position_ratio": decimal_to_str(self.cfg.robot_trial_position_ratio, 6),
+                    "confirm_position_ratio": decimal_to_str(self.cfg.robot_confirm_position_ratio, 6),
+                    "stop_loss_ratio": decimal_to_str(self.cfg.robot_stop_loss_ratio, 6),
+                    "large_order_threshold_v": decimal_to_str(
+                        self.cfg.robot_large_order_threshold_v, 18
+                    ),
+                    "pool_factory_addrs": self.cfg.pool_factory_addrs,
+                    "pool_discovery_quote_token_addrs": self.cfg.pool_discovery_quote_token_addrs,
+                },
             }
         )
 
@@ -3361,6 +4604,155 @@ class VirtualsBot:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
+    async def token_pools_handler(self, request: web.Request) -> web.Response:
+        token = request.query.get("token")
+        token = str(token).strip() if token else None
+        try:
+            limit_n = int(request.query.get("limit", "200"))
+        except ValueError:
+            return web.json_response({"error": "limit must be integer"}, status=400)
+        try:
+            if token:
+                token = normalize_address(token)
+            data = self.storage.list_token_pools(token_address=token, limit_n=limit_n)
+            return web.json_response({"count": len(data), "items": data})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def pool_snapshots_handler(self, request: web.Request) -> web.Response:
+        pool = request.query.get("pool")
+        if not pool:
+            return web.json_response({"error": "pool is required"}, status=400)
+        try:
+            limit_n = int(request.query.get("limit", "100"))
+        except ValueError:
+            return web.json_response({"error": "limit must be integer"}, status=400)
+        try:
+            data = self.storage.query_pool_snapshots(pool, limit_n=limit_n)
+            return web.json_response({"pool": normalize_address(pool), "count": len(data), "items": data})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def robot_features_handler(self, request: web.Request) -> web.Response:
+        token = request.query.get("token")
+        if not token:
+            return web.json_response({"error": "token is required"}, status=400)
+        try:
+            limit_n = int(request.query.get("limit", "120"))
+        except ValueError:
+            return web.json_response({"error": "limit must be integer"}, status=400)
+        try:
+            token = normalize_address(token)
+            data = self.storage.query_feature_snapshots(token, limit_n=limit_n)
+            return web.json_response({"token": token, "count": len(data), "items": data})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def robot_scores_handler(self, request: web.Request) -> web.Response:
+        token = request.query.get("token")
+        if not token:
+            return web.json_response({"error": "token is required"}, status=400)
+        try:
+            limit_n = int(request.query.get("limit", "120"))
+        except ValueError:
+            return web.json_response({"error": "limit must be integer"}, status=400)
+        try:
+            token = normalize_address(token)
+            data = self.storage.query_score_snapshots(token, limit_n=limit_n)
+            return web.json_response({"token": token, "count": len(data), "items": data})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def robot_trades_handler(self, request: web.Request) -> web.Response:
+        token = request.query.get("token")
+        token = str(token).strip() if token else None
+        try:
+            limit_n = int(request.query.get("limit", "200"))
+        except ValueError:
+            return web.json_response({"error": "limit must be integer"}, status=400)
+        try:
+            if token:
+                token = normalize_address(token)
+            data = self.storage.query_robot_trades(token_address=token, limit_n=limit_n)
+            return web.json_response({"count": len(data), "items": data})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def robot_positions_handler(self, request: web.Request) -> web.Response:
+        project = request.query.get("project")
+        project = str(project).strip() if project else None
+        data = self.storage.list_robot_positions(project=project)
+        return web.json_response({"count": len(data), "items": data})
+
+    async def robot_mode_get_handler(self, request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "ok": True,
+                "mode": self.cfg.robot_mode,
+                "riskPaused": bool(self.robot_paused_due_risk),
+                "consecutiveLosses": int(self.robot_consecutive_losses),
+                "maxConsecutiveLosses": int(self.cfg.robot_max_consecutive_losses),
+            }
+        )
+
+    async def robot_mode_set_handler(self, request: web.Request) -> web.Response:
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid json body"}, status=400)
+        mode_raw = str(payload.get("mode", "")).strip().lower()
+        mode_alias = {"observation": "observe", "sim": "paper", "simulate": "paper"}
+        mode = mode_alias.get(mode_raw, mode_raw)
+        if mode not in {"observe", "paper", "live"}:
+            return web.json_response({"error": "mode must be one of: observe, paper, live"}, status=400)
+        self.cfg.robot_mode = mode
+        self.storage.set_robot_state("runtime_robot_mode", mode)
+        return await self.robot_mode_get_handler(request)
+
+    async def robot_resume_handler(self, request: web.Request) -> web.Response:
+        self._set_robot_consecutive_losses(0)
+        self._set_robot_risk_pause(False)
+        return web.json_response(
+            {
+                "ok": True,
+                "riskPaused": bool(self.robot_paused_due_risk),
+                "consecutiveLosses": int(self.robot_consecutive_losses),
+            }
+        )
+
+    async def robot_summary_handler(self, request: web.Request) -> web.Response:
+        project = request.query.get("project")
+        project = str(project).strip() if project else None
+        positions = self.storage.list_robot_positions(project=project)
+        invested_v = Decimal(0)
+        market_value_v = Decimal(0)
+        for row in positions:
+            pos_v = self._to_decimal(row.get("position_value_v"))
+            token_amount = self._to_decimal(row.get("token_amount"))
+            last_price = self._to_decimal(row.get("last_price_v"))
+            invested_v += pos_v
+            market_value_v += token_amount * last_price
+        unrealized_pnl_v = market_value_v - invested_v
+        runtime_data = self.runtime_pause_payload()
+        recent_trades = self.storage.query_robot_trades(limit_n=10)
+        return web.json_response(
+            {
+                "mode": self.cfg.robot_mode,
+                "entryEnabled": bool(self._is_robot_entry_allowed()),
+                "runtimePaused": bool(runtime_data["runtimePaused"]),
+                "riskPaused": bool(self.robot_paused_due_risk),
+                "consecutiveLosses": int(self.robot_consecutive_losses),
+                "maxConsecutiveLosses": int(self.cfg.robot_max_consecutive_losses),
+                "openPositionCount": len(positions),
+                "investedV": decimal_to_str(invested_v, 18),
+                "marketValueV": decimal_to_str(market_value_v, 18),
+                "unrealizedPnlV": decimal_to_str(unrealized_pnl_v, 18),
+                "maxProjectPositionRatio": decimal_to_str(self.cfg.robot_max_project_position_ratio, 6),
+                "stopLossRatio": decimal_to_str(self.cfg.robot_stop_loss_ratio, 6),
+                "recentTrades": recent_trades,
+            }
+        )
+
     def resolve_cors_origin(self, request_origin: Optional[str]) -> Optional[str]:
         if not request_origin or not self.cors_allow_origins:
             return None
@@ -3424,6 +4816,16 @@ class VirtualsBot:
         app.router.add_get("/leaderboard", self.leaderboard_handler)
         app.router.add_get("/event-delays", self.event_delays_handler)
         app.router.add_get("/project-tax", self.project_tax_handler)
+        app.router.add_get("/token-pools", self.token_pools_handler)
+        app.router.add_get("/pool-snapshots", self.pool_snapshots_handler)
+        app.router.add_get("/robot/summary", self.robot_summary_handler)
+        app.router.add_get("/robot/mode", self.robot_mode_get_handler)
+        app.router.add_post("/robot/mode", self.robot_mode_set_handler)
+        app.router.add_post("/robot/resume", self.robot_resume_handler)
+        app.router.add_get("/robot/positions", self.robot_positions_handler)
+        app.router.add_get("/robot/trades", self.robot_trades_handler)
+        app.router.add_get("/robot/features", self.robot_features_handler)
+        app.router.add_get("/robot/scores", self.robot_scores_handler)
         return app
 
     async def run(self) -> None:
