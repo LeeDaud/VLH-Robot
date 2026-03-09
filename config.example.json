@@ -1,0 +1,54 @@
+{
+  "CHAIN_ID": 8453,
+  "WS_RPC_URL": "wss://base-mainnet.core.chainstack.com/f182d37c5cbff7f1bb5fc314f5900f1c",
+  "HTTP_RPC_URL": "https://base-mainnet.core.chainstack.com/f182d37c5cbff7f1bb5fc314f5900f1c",
+  "BACKFILL_HTTP_RPC_URL": "https://base-mainnet.core.chainstack.com/03f07e9ef90c8db8e71fdca6ab243657",
+
+  "VIRTUAL_TOKEN_ADDR": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
+  "FEE_RATE_DEFAULT": 0.01,
+  "TOTAL_SUPPLY_DEFAULT": 1000000000,
+
+  "LAUNCH_CONFIGS": [
+    {
+      "name": "WORK",
+      "internal_pool_addr": "0x3390759661ecaae232287fca61cee9672cb44f32",
+      "fee_addr": "0x7E26173192D72fd6D75A759F888d61c2cdbB64B1",
+      "tax_addr": "0x32487287c65f11d53bbca89c2472171eb09bf337",
+      "token_total_supply": 1000000000,
+      "fee_rate": 0.01
+    }
+  ],
+
+  "MY_WALLETS": [
+    "0x0f4c21786456ac7ddd217f97f9f01eaffd16f8f4",
+    "0xef49efa4042609b7d84ee2b538dcff4d9953dd50",
+    "0x0e54ee305cff2b8943bab7f5a4352586ae9ee2be"
+  ],
+
+  "TOP_N": 50,
+  "CONFIRMATIONS": 0,
+  "AGG_MINUTE_WINDOW": 0,
+
+  "PRICE_MODE": "onchain_pool",
+  "VIRTUAL_USDC_PAIR_ADDR": "0x82b5486ae10201990030f60b1ef65f51eaf7d290",
+  "PRICE_REFRESH_SEC": 8,
+
+  "DB_MODE": "sqlite",
+  "SQLITE_PATH": "./data/virtuals_v11.db",
+  "DB_BATCH_SIZE": 1,
+  "DB_FLUSH_MS": 150,
+
+  "RECEIPT_WORKERS": 4,
+  "RECEIPT_WORKERS_REALTIME": 8,
+  "RECEIPT_WORKERS_BACKFILL": 2,
+  "MAX_RPC_RETRIES": 5,
+  "BACKFILL_CHUNK_BLOCKS": 5,
+  "BACKFILL_INTERVAL_SEC": 5,
+
+  "JSONL_PATH": "./data/events.jsonl",
+  "EVENT_BUS_SQLITE_PATH": "./data/virtuals_bus.db",
+  "API_HOST": "127.0.0.1",
+  "API_PORT": 8080,
+  "CORS_ALLOW_ORIGINS": [],
+  "LOG_LEVEL": "info"
+}

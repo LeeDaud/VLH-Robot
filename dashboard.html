@@ -1,0 +1,2766 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#05070c" />
+  <meta name="vpulse-api-base" content="" />
+  <link rel="icon" type="image/x-icon" href="./favicon/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon/favicon-16x16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="./favicon/site.webmanifest" />
+  <title>Virtuals-Launch-Hunter</title>
+  <style>
+    :root {
+      --bg: #05070c;
+      --bg-elev-1: #0a0f17;
+      --bg-elev-2: #0f1622;
+      --card: rgba(10, 14, 22, 0.84);
+      --card-2: rgba(13, 19, 30, 0.92);
+      --border: rgba(202, 255, 98, 0.22);
+      --divider: rgba(255, 255, 255, 0.07);
+
+      --text: rgba(245, 250, 255, 0.95);
+      --text-2: rgba(204, 214, 232, 0.76);
+      --text-3: rgba(161, 174, 197, 0.58);
+
+      --primary: #c9ff6b;
+      --accent: #49f2ff;
+      --success: #7bffb0;
+      --warn: #ffd25f;
+      --danger: #ff7b89;
+
+      --r-card: 14px;
+      --r-ctl: 12px;
+
+      --shadow-1: 0 14px 38px rgba(2, 4, 8, 0.6);
+      --shadow-2: 0 22px 64px rgba(0, 0, 0, 0.66);
+      --t-fast: 180ms cubic-bezier(.2, .7, .3, 1);
+
+      --mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", "Consolas", monospace;
+      --sans: "Space Grotesk", "IBM Plex Sans", "MiSans", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      overflow-y: auto;
+      background: #05070c;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(1000px 560px at 12% -8%, rgba(201, 255, 107, 0.16) 0%, transparent 58%),
+        radial-gradient(880px 520px at 88% -6%, rgba(73, 242, 255, 0.15) 0%, transparent 60%),
+        linear-gradient(145deg, var(--bg), var(--bg-elev-1) 46%, var(--bg-elev-2) 100%);
+      min-height: 100vh;
+      padding: 0;
+      overflow-x: hidden;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      position: relative;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.22;
+      z-index: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(700px 300px at 50% -120px, rgba(201, 255, 107, 0.1), transparent 70%);
+      z-index: 0;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 12px 0 22px;
+      display: grid;
+      gap: 20px;
+      min-width: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 10px;
+      z-index: 12;
+      background:
+        linear-gradient(180deg, rgba(15, 23, 35, 0.92), rgba(9, 14, 24, 0.88));
+      border: 1px solid rgba(201, 255, 107, 0.32);
+      border-radius: var(--r-card);
+      box-shadow: var(--shadow-1);
+      backdrop-filter: blur(14px);
+      padding: 18px 20px;
+      isolation: isolate;
+    }
+
+    .header::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(120deg, rgba(201, 255, 107, 0.12), transparent 35%, rgba(73, 242, 255, 0.12));
+      mix-blend-mode: screen;
+      opacity: 0.85;
+      z-index: -1;
+    }
+
+    .title {
+      font-size: clamp(24px, 3vw, 36px);
+      letter-spacing: 0.8px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-transform: uppercase;
+      text-shadow: 0 0 22px rgba(201, 255, 107, 0.22);
+    }
+
+    .subtitle {
+      color: var(--text-2);
+      font-size: 12px;
+      margin-top: 8px;
+      letter-spacing: 0.35px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .brand-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(73, 242, 255, 0.45);
+      color: #b7f9ff;
+      background: rgba(73, 242, 255, 0.12);
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .minute-range-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .pill,
+    .pill-input,
+    .field input {
+      height: 36px;
+      border-radius: var(--r-ctl);
+      border: 1px solid rgba(204, 214, 232, 0.22);
+      background: linear-gradient(180deg, rgba(20, 29, 43, 0.92), rgba(13, 20, 32, 0.9));
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 500;
+      transition:
+        border-color var(--t-fast),
+        box-shadow var(--t-fast),
+        background-color var(--t-fast),
+        transform var(--t-fast);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .pill:hover {
+      border-color: rgba(201, 255, 107, 0.62);
+      background: linear-gradient(180deg, rgba(25, 36, 52, 0.95), rgba(15, 23, 36, 0.93));
+      box-shadow: 0 0 0 1px rgba(201, 255, 107, 0.25), 0 8px 18px rgba(7, 11, 18, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .pill[disabled] {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .pill.is-active {
+      border-color: rgba(201, 255, 107, 0.82);
+      box-shadow: inset 0 0 0 1px rgba(201, 255, 107, 0.32), 0 0 18px rgba(201, 255, 107, 0.18);
+      background: linear-gradient(180deg, rgba(72, 102, 31, 0.3), rgba(23, 31, 17, 0.9));
+      color: #f3ffe2;
+    }
+
+    .pill-input {
+      min-width: 170px;
+      padding: 0 12px;
+    }
+
+    .pill-input[type="datetime-local"] {
+      color-scheme: dark;
+    }
+
+    .pill-input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cline x1='16' y1='3' x2='16' y2='7'/%3E%3Cline x1='8' y1='3' x2='8' y2='7'/%3E%3Cline x1='3' y1='11' x2='21' y2='11'/%3E%3C/svg%3E");
+      background-size: 14px 14px;
+      background-position: center;
+      background-repeat: no-repeat;
+      filter: brightness(0) invert(1) !important;
+      opacity: 1;
+      cursor: pointer;
+    }
+
+    .pill-input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+      opacity: 1;
+    }
+
+    .minute-range-controls .pill-input {
+      min-width: 165px;
+    }
+
+    .project-dropdown {
+      position: relative;
+      min-width: 160px;
+    }
+
+    .project-dropdown-trigger {
+      width: 100%;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      border-color: rgba(170, 187, 214, 0.28);
+      background: linear-gradient(180deg, rgba(20, 29, 43, 0.92), rgba(13, 20, 32, 0.9));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .project-dropdown-label {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: left;
+      color: rgba(236, 242, 251, 0.94);
+      letter-spacing: 0.2px;
+    }
+
+    .project-dropdown-arrow {
+      width: 8px;
+      height: 8px;
+      border-right: 1.6px solid rgba(192, 208, 233, 0.86);
+      border-bottom: 1.6px solid rgba(192, 208, 233, 0.86);
+      transform: rotate(45deg) translateY(-1px);
+      transition: transform 170ms ease-out, border-color 170ms ease-out;
+      flex-shrink: 0;
+    }
+
+    .project-dropdown.is-open .project-dropdown-arrow {
+      transform: rotate(-135deg) translateY(-1px);
+    }
+
+    .project-dropdown-trigger:hover {
+      border-color: rgba(161, 181, 214, 0.62);
+      background: linear-gradient(180deg, rgba(27, 39, 56, 0.96), rgba(16, 25, 39, 0.94));
+      box-shadow: 0 0 0 1px rgba(111, 139, 182, 0.22), 0 8px 18px rgba(6, 11, 18, 0.58);
+      transform: translateY(-1px);
+    }
+
+    .project-dropdown .project-dropdown-trigger:focus-visible {
+      outline: none;
+      border-color: rgba(167, 189, 222, 0.75);
+      box-shadow: 0 0 0 3px rgba(118, 146, 187, 0.26), 0 0 18px rgba(97, 124, 164, 0.2);
+    }
+
+    .project-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 100%;
+      min-width: 170px;
+      padding: 6px;
+      border-radius: var(--r-ctl);
+      border: 1px solid rgba(160, 178, 209, 0.25);
+      background: linear-gradient(180deg, rgba(17, 25, 38, 0.94), rgba(10, 16, 27, 0.93));
+      box-shadow: 0 18px 38px rgba(4, 9, 18, 0.62);
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      transform: translateY(-6px);
+      pointer-events: none;
+      transition: opacity 170ms ease-out, transform 170ms ease-out;
+      z-index: 26;
+    }
+
+    .project-dropdown.is-open .project-dropdown-menu {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .project-dropdown-option {
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: rgba(224, 235, 251, 0.9);
+      text-align: left;
+      padding: 8px 10px;
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      transition: background-color 160ms ease-out, color 160ms ease-out;
+    }
+
+    .project-dropdown-option:hover {
+      background: rgba(110, 133, 167, 0.2);
+      color: #eef4ff;
+    }
+
+    .project-dropdown-option.is-selected {
+      background: rgba(185, 204, 235, 0.85);
+      color: #122033;
+    }
+
+    .project-dropdown-option.is-selected:hover {
+      background: rgba(185, 204, 235, 0.92);
+      color: #122033;
+    }
+
+    .project-native-select {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      pointer-events: none;
+      opacity: 0;
+      left: 0;
+      top: 0;
+    }
+
+    .pill:focus-visible,
+    .pill-input:focus-visible,
+    .field input:focus-visible {
+      outline: none;
+      border-color: rgba(201, 255, 107, 0.8);
+      box-shadow: 0 0 0 3px rgba(201, 255, 107, 0.22);
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-5 {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(176, 192, 219, 0.2);
+      border-radius: var(--r-card);
+      box-shadow: var(--shadow-1);
+      padding: 22px;
+      animation: fadeUp 260ms ease both;
+      min-width: 0;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      position: relative;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(201, 255, 107, 0.05), transparent 36%, rgba(73, 242, 255, 0.05));
+      opacity: 0.95;
+    }
+
+    .kpi-title {
+      color: var(--text-3);
+      font-size: 10px;
+      letter-spacing: 1.1px;
+      margin-bottom: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .kpi-value {
+      font-family: var(--mono);
+      font-size: clamp(20px, 2.2vw, 28px);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-family: var(--sans);
+      border: 1px solid transparent;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .ok {
+      color: #e0ffed;
+      border-color: rgba(123, 255, 176, 0.45);
+      background: rgba(123, 255, 176, 0.14);
+      box-shadow: 0 0 14px rgba(123, 255, 176, 0.18);
+    }
+
+    .bad {
+      color: #ffe3e7;
+      border-color: rgba(255, 123, 137, 0.5);
+      background: rgba(255, 123, 137, 0.14);
+      box-shadow: 0 0 14px rgba(255, 123, 137, 0.14);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 16px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      margin-bottom: 14px;
+      color: var(--text-2);
+      letter-spacing: 0.8px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .ui-bar {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding-top: 14px;
+      padding-bottom: 14px;
+      justify-content: space-between;
+    }
+
+    .state-bar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      width: 100%;
+    }
+
+    .state-item {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid rgba(176, 192, 219, 0.24);
+      border-radius: var(--r-ctl);
+      background: var(--card-2);
+    }
+
+    .state-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .state-item-title {
+      color: var(--text-2);
+      font-size: 12px;
+      letter-spacing: 0.45px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .state-item-desc {
+      color: var(--text-3);
+      font-size: 12px;
+      font-family: var(--sans);
+      min-height: 18px;
+    }
+
+    .batch-tuning-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .chart-wrap {
+      background: var(--card-2);
+      border: 1px solid rgba(176, 192, 219, 0.24);
+      border-radius: var(--r-ctl);
+      padding: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    canvas {
+      width: 100%;
+      height: 320px;
+      display: block;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 360px;
+      border: 1px solid rgba(176, 192, 219, 0.24);
+      border-radius: var(--r-ctl);
+      background: var(--card-2);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--text-2);
+      font-family: var(--sans);
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 0 10px;
+    }
+
+    .form-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .wallet-config-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .wallet-config-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .wallet-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border: 1px solid rgba(176, 192, 219, 0.26);
+      border-radius: var(--r-ctl);
+      background: var(--card-2);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .wallet-chip .pill {
+      height: 30px;
+      padding: 0 10px;
+    }
+
+    .hint {
+      color: var(--text-2);
+      font-size: 12px;
+      font-family: var(--sans);
+      overflow-wrap: anywhere;
+    }
+
+    #refreshMessage {
+      display: inline-block;
+      max-width: min(54vw, 680px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: bottom;
+      color: rgba(201, 255, 107, 0.9);
+    }
+
+    .grid-5 .card {
+      border-color: rgba(176, 192, 219, 0.24);
+      background:
+        linear-gradient(180deg, rgba(13, 19, 29, 0.92), rgba(10, 15, 24, 0.9));
+    }
+
+    .grid-5 .card:nth-child(1) {
+      border-color: rgba(123, 255, 176, 0.34);
+    }
+
+    .grid-5 .card:nth-child(2) {
+      border-color: rgba(73, 242, 255, 0.34);
+    }
+
+    .grid-5 .card:nth-child(5) {
+      border-color: rgba(201, 255, 107, 0.42);
+    }
+
+    .copy-btn {
+      margin-left: 6px;
+      border: 1px solid rgba(176, 192, 219, 0.26);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-size: 11px;
+      line-height: 1.4;
+      cursor: pointer;
+      font-family: var(--sans);
+      font-weight: 520;
+      transition:
+        border-color var(--t-fast),
+        color var(--t-fast),
+        background-color var(--t-fast);
+    }
+
+    .copy-btn:hover {
+      border-color: rgba(73, 242, 255, 0.55);
+      background: rgba(73, 242, 255, 0.14);
+      color: #ddfbff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 800px;
+      font-family: var(--sans);
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    th,
+    td {
+      height: 44px;
+      border-bottom: 1px solid var(--divider);
+      padding: 0 12px;
+      text-align: left;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: var(--card-2);
+      z-index: 1;
+      color: var(--text-2);
+      font-weight: 600;
+      letter-spacing: 0.35px;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+
+    tbody tr:hover td {
+      background: rgba(201, 255, 107, 0.06);
+    }
+
+    #leaderTable th:nth-child(3),
+    #leaderTable th:nth-child(4),
+    #leaderTable th:nth-child(5),
+    #leaderTable td:nth-child(3),
+    #leaderTable td:nth-child(4),
+    #leaderTable td:nth-child(5),
+    #walletTable th:nth-child(4),
+    #walletTable th:nth-child(5),
+    #walletTable th:nth-child(6),
+    #walletTable td:nth-child(4),
+    #walletTable td:nth-child(5),
+    #walletTable td:nth-child(6),
+    #txDelayTable th:nth-child(4),
+    #txDelayTable td:nth-child(4) {
+      text-align: right;
+    }
+
+    #launchConfigTable th:nth-child(3),
+    #launchConfigTable td:nth-child(3) {
+      text-align: center;
+    }
+
+    .delay-good {
+      color: var(--success);
+    }
+
+    .delay-warn {
+      color: var(--warn);
+    }
+
+    .delay-bad {
+      color: var(--danger);
+    }
+
+    .ui-tip {
+      display: inline-flex;
+      align-items: center;
+      color: inherit;
+      cursor: default;
+    }
+
+    .hover-tip {
+      position: fixed;
+      left: 0;
+      top: 0;
+      transform: translate(-9999px, -9999px);
+      background: var(--card-2);
+      color: var(--text);
+      border: 1px solid rgba(176, 192, 219, 0.26);
+      border-radius: 10px;
+      box-shadow: var(--shadow-1);
+      font-family: var(--sans);
+      font-size: 11px;
+      line-height: 1.4;
+      white-space: nowrap;
+      padding: 6px 10px;
+      max-width: min(80vw, 520px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 30;
+      transition: opacity var(--t-fast);
+    }
+
+    .hover-tip.show {
+      opacity: 1;
+    }
+
+    .muted {
+      color: var(--text-3);
+    }
+
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: rgba(201, 255, 107, 0.3);
+      border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(201, 255, 107, 0.48);
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .header {
+        padding: 14px 12px;
+      }
+
+      #refreshMessage {
+        max-width: 100%;
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-5 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .state-bar {
+        grid-template-columns: 1fr;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        padding: 18px;
+      }
+
+      table {
+        min-width: 640px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .title {
+        font-size: 22px;
+      }
+
+      .controls {
+        width: 100%;
+      }
+
+      .pill,
+      .pill-input,
+      .project-dropdown {
+        min-width: 100%;
+      }
+
+      .minute-range-controls .pill-input {
+        min-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="header">
+      <div>
+        <div class="title">Virtuals-Launch-Hunter</div>
+        <div class="subtitle">
+          <span class="brand-chip">Launch Intelligence</span>
+          <span>三进程 | 链上价格 | 无 Supabase 热路径</span>
+        </div>
+      </div>
+      <div class="controls">
+        <div id="projectDropdown" class="project-dropdown">
+          <button
+            id="projectDropdownTrigger"
+            type="button"
+            class="pill project-dropdown-trigger"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span id="projectDropdownLabel" class="project-dropdown-label">-</span>
+            <span class="project-dropdown-arrow" aria-hidden="true"></span>
+          </button>
+          <div
+            id="projectDropdownMenu"
+            class="project-dropdown-menu"
+            role="listbox"
+            aria-hidden="true"
+            aria-label="项目切换"
+          ></div>
+          <select id="projectSelect" class="project-native-select" tabindex="-1" aria-hidden="true"></select>
+        </div>
+        <input id="scanStartUtc8" type="datetime-local" class="pill-input" />
+        <input id="scanEndUtc8" type="datetime-local" class="pill-input" />
+        <button id="scanRangeBtn" class="pill">按区间回扫(UTC+8)</button>
+        <button id="scanCancelBtn" class="pill" disabled>取消回扫</button>
+        <button id="refreshBtn" class="pill">刷新</button>
+        <button id="runtimePauseBtn" class="pill">采集开关：加载中...</button>
+        <button id="fastModeBtn" class="pill">极速模式：关(0.5s)</button>
+        <button id="superModeBtn" class="pill">超速模式：关(0.25s)</button>
+        <span id="refreshMessage" class="hint">-</span>
+      </div>
+    </section>
+
+    <section class="card ui-bar">
+      <span id="refreshPerf" class="hint">刷新耗时：-</span>
+      <span id="delayPerf" class="hint">录入延迟 P50/P95：-</span>
+    </section>
+
+    <section class="card">
+      <div class="section-title">运行状态</div>
+      <div class="state-bar">
+        <div class="state-item">
+          <div class="state-item-head">
+            <span class="state-item-title">采集</span>
+            <span id="collectStateBadge" class="status">-</span>
+          </div>
+          <div id="collectStateDesc" class="state-item-desc">-</div>
+        </div>
+        <div class="state-item">
+          <div class="state-item-head">
+            <span class="state-item-title">回扫</span>
+            <span id="backfillStateBadge" class="status">-</span>
+          </div>
+          <div id="backfillStateDesc" class="state-item-desc">-</div>
+        </div>
+        <div class="state-item">
+          <div class="state-item-head">
+            <span class="state-item-title">实时更新</span>
+            <span id="realtimeStateBadge" class="status">-</span>
+          </div>
+          <div id="realtimeStateDesc" class="state-item-desc">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">入库批量调节（DB_BATCH_SIZE）</div>
+      <div class="batch-tuning-row">
+        <button class="pill db-batch-preset" type="button" data-batch-size="1">1</button>
+        <button class="pill db-batch-preset" type="button" data-batch-size="5">5</button>
+        <button class="pill db-batch-preset" type="button" data-batch-size="10">10</button>
+        <button class="pill db-batch-preset" type="button" data-batch-size="20">20</button>
+        <button class="pill db-batch-preset" type="button" data-batch-size="50">50</button>
+        <input id="dbBatchInput" type="number" min="1" max="100" step="1" class="pill-input" style="min-width: 120px;" placeholder="自定义(1~100)" />
+        <button id="applyDbBatchBtn" class="pill">应用批量</button>
+        <span id="dbBatchMessage" class="hint">当前：-</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">项目配置管理（仅可修改 name / 内盘地址）</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="lcName">name（项目名）</label>
+          <input id="lcName" placeholder="例如 WORK2" />
+        </div>
+        <div class="field">
+          <label for="lcInternalPool">internal_pool_addr（必填）</label>
+          <input id="lcInternalPool" placeholder="0x..." />
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <label class="hint">
+          <input id="lcSwitchOnly" type="checkbox" checked />
+          仅监控当前项目（停用其它项目监听，历史数据保留）
+        </label>
+        <button id="saveConfigBtn" class="pill">保存/切换项目</button>
+        <button id="deleteConfigBtn" class="pill">删除项目</button>
+        <span id="fixedInfo" class="hint">固定参数：加载中...</span>
+        <span id="lcMessage" class="hint">-</span>
+      </div>
+
+      <div class="table-wrap">
+        <table id="launchConfigTable">
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>内盘地址</th>
+              <th>启用</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-5">
+      <div class="card">
+        <div class="kpi-title">连接状态</div>
+        <div id="wsStatus" class="kpi-value">-</div>
+      </div>
+      <div class="card">
+        <div class="kpi-title">价格 (VIRTUAL/USD)</div>
+        <div id="priceValue" class="kpi-value">-</div>
+      </div>
+      <div class="card">
+        <div class="kpi-title">队列 / 待处理</div>
+        <div id="queueValue" class="kpi-value">-</div>
+      </div>
+      <div class="card">
+        <div class="kpi-title">已解析 / 已入库</div>
+        <div id="parsedValue" class="kpi-value">-</div>
+      </div>
+      <div class="card">
+        <div class="kpi-title">项目累计税收(V)</div>
+        <div id="projectTaxValue" class="kpi-value">-</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">分钟消耗 SpentV（柱状图）</div>
+      <div class="minute-range-controls">
+        <input id="minuteStartUtc8" type="datetime-local" class="pill-input" />
+        <input id="minuteEndUtc8" type="datetime-local" class="pill-input" />
+        <button id="minuteRangeBtn" class="pill">应用分钟区间(UTC+8)</button>
+        <span id="minuteRangeMessage" class="hint">-</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="minuteChart"></canvas>
+      </div>
+      <div id="minuteMeta" class="muted" style="margin-top:8px;font-family:var(--mono);font-size:12px;">-</div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">大户榜</div>
+      <div class="table-wrap">
+        <table id="leaderTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>买家地址</th>
+              <th>累计估算花费V</th>
+              <th>累计买入代币(万)</th>
+              <th>FDV_USD(万)</th>
+              <th>最近交易时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <section class="card">
+      <div class="section-title">我的钱包持仓</div>
+      <div class="wallet-config-bar">
+        <input id="walletInput" class="pill-input" placeholder="添加监控钱包 0x..." />
+        <button id="addWalletBtn" class="pill">添加钱包</button>
+        <span id="walletCfgMessage" class="hint">可在此新增/删除监控钱包，保存到本地数据库。</span>
+      </div>
+      <div id="walletConfigList" class="wallet-config-list"></div>
+      <div class="table-wrap">
+        <table id="walletTable">
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>钱包地址</th>
+              <th>代币地址</th>
+              <th>累计花费V</th>
+              <th>累计代币数量(万)</th>
+              <th>FDV_USD(万)</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">交易录入延迟</div>
+      <div class="table-wrap">
+        <table id="txDelayTable">
+          <thead>
+            <tr>
+              <th>交易哈希</th>
+              <th>交易产生时间</th>
+              <th>录入时间</th>
+              <th>时间差(秒)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+  <div id="hoverTip" class="hover-tip" aria-hidden="true"></div>
+
+  <script>
+    const projectDropdown = document.getElementById("projectDropdown");
+    const projectDropdownTrigger = document.getElementById("projectDropdownTrigger");
+    const projectDropdownLabel = document.getElementById("projectDropdownLabel");
+    const projectDropdownMenu = document.getElementById("projectDropdownMenu");
+    const projectSelect = document.getElementById("projectSelect");
+    const scanStartUtc8 = document.getElementById("scanStartUtc8");
+    const scanEndUtc8 = document.getElementById("scanEndUtc8");
+    const scanRangeBtn = document.getElementById("scanRangeBtn");
+    const scanCancelBtn = document.getElementById("scanCancelBtn");
+    const minuteStartUtc8 = document.getElementById("minuteStartUtc8");
+    const minuteEndUtc8 = document.getElementById("minuteEndUtc8");
+    const minuteRangeBtn = document.getElementById("minuteRangeBtn");
+    const minuteRangeMessage = document.getElementById("minuteRangeMessage");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const runtimePauseBtn = document.getElementById("runtimePauseBtn");
+    const fastModeBtn = document.getElementById("fastModeBtn");
+    const superModeBtn = document.getElementById("superModeBtn");
+    const refreshMessage = document.getElementById("refreshMessage");
+    const hoverTip = document.getElementById("hoverTip");
+    const refreshPerf = document.getElementById("refreshPerf");
+    const delayPerf = document.getElementById("delayPerf");
+    const collectStateBadge = document.getElementById("collectStateBadge");
+    const collectStateDesc = document.getElementById("collectStateDesc");
+    const backfillStateBadge = document.getElementById("backfillStateBadge");
+    const backfillStateDesc = document.getElementById("backfillStateDesc");
+    const realtimeStateBadge = document.getElementById("realtimeStateBadge");
+    const realtimeStateDesc = document.getElementById("realtimeStateDesc");
+    const dbBatchInput = document.getElementById("dbBatchInput");
+    const applyDbBatchBtn = document.getElementById("applyDbBatchBtn");
+    const dbBatchMessage = document.getElementById("dbBatchMessage");
+    const wsStatus = document.getElementById("wsStatus");
+    const priceValue = document.getElementById("priceValue");
+    const queueValue = document.getElementById("queueValue");
+    const parsedValue = document.getElementById("parsedValue");
+    const projectTaxValue = document.getElementById("projectTaxValue");
+    const minuteMeta = document.getElementById("minuteMeta");
+    const walletBody = document.querySelector("#walletTable tbody");
+    const walletInput = document.getElementById("walletInput");
+    const addWalletBtn = document.getElementById("addWalletBtn");
+    const walletCfgMessage = document.getElementById("walletCfgMessage");
+    const walletConfigList = document.getElementById("walletConfigList");
+    const leaderBody = document.querySelector("#leaderTable tbody");
+    const txDelayBody = document.querySelector("#txDelayTable tbody");
+    const launchConfigBody = document.querySelector("#launchConfigTable tbody");
+    const chart = document.getElementById("minuteChart");
+    const ctx = chart.getContext("2d");
+    const lcName = document.getElementById("lcName");
+    const lcInternalPool = document.getElementById("lcInternalPool");
+    const lcSwitchOnly = document.getElementById("lcSwitchOnly");
+    const saveConfigBtn = document.getElementById("saveConfigBtn");
+    const deleteConfigBtn = document.getElementById("deleteConfigBtn");
+    const fixedInfo = document.getElementById("fixedInfo");
+    const lcMessage = document.getElementById("lcMessage");
+    const LEGACY_FAST_MODE_STORAGE_KEY = "virtuals_fast_mode";
+    const REFRESH_MODE_STORAGE_KEY = "virtuals_refresh_mode";
+    const PROJECT_STORAGE_KEY = "virtuals_selected_project";
+    const SCAN_START_STORAGE_KEY = "virtuals_scan_start_utc8";
+    const SCAN_END_STORAGE_KEY = "virtuals_scan_end_utc8";
+    const MINUTE_START_STORAGE_KEY = "virtuals_minute_start_utc8";
+    const MINUTE_END_STORAGE_KEY = "virtuals_minute_end_utc8";
+    const NORMAL_REFRESH_MS = 1000;
+    const FAST_REFRESH_MS = 500;
+    const SUPER_REFRESH_MS = 250;
+    const SUPER_MODE_GUARD_RATIO = 0.7;
+    const SUPER_MODE_GUARD_HITS = 3;
+    const RUNTIME_HEARTBEAT_MS = 5000;
+    let minuteRangeApplied = null;
+    let lastChartCssWidth = "";
+    let refreshInFlight = false;
+    let refreshQueued = false;
+    let resizeRefreshTimer = null;
+    let currentRefreshMode = "normal";
+    let autoRefreshMs = NORMAL_REFRESH_MS;
+    let autoRefreshTimer = null;
+    let superModeOverloadHits = 0;
+    let tipMouseInside = false;
+    let tipPointerX = 0;
+    let tipPointerY = 0;
+    let currentScanJobId = null;
+    let monitoredWallets = [];
+    let launchConfigRowsCache = [];
+    let currentDbBatchSize = null;
+    let projectDropdownOpen = false;
+    let runtimePaused = false;
+    let runtimePauseToggleInFlight = false;
+    let runtimeHeartbeatTimer = null;
+    let runtimeHeartbeatInFlight = false;
+    const apiBaseMeta = document.querySelector('meta[name="vpulse-api-base"]');
+    const API_BASE_URL = String(apiBaseMeta?.getAttribute("content") || "")
+      .trim()
+      .replace(/\/+$/, "");
+
+    const toNum = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    function buildApiUrl(path) {
+      const p = String(path || "");
+      if (!p) return API_BASE_URL || "/";
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE_URL) return p;
+      if (p.startsWith("/")) return `${API_BASE_URL}${p}`;
+      return `${API_BASE_URL}/${p}`;
+    }
+
+    function percentile(values, p) {
+      if (!values.length) return null;
+      const sorted = [...values].sort((a, b) => a - b);
+      const i = (sorted.length - 1) * p;
+      const lo = Math.floor(i);
+      const hi = Math.ceil(i);
+      if (lo === hi) return sorted[lo];
+      return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+    }
+
+    function updateDelayPerf(rows) {
+      const values = rows
+        .map((r) => Number(r.delay_sec))
+        .filter((x) => Number.isFinite(x) && x >= 0);
+      if (!values.length) {
+        delayPerf.textContent = "录入延迟 P50/P95：-";
+        return;
+      }
+      const p50 = percentile(values, 0.5);
+      const p95 = percentile(values, 0.95);
+      delayPerf.textContent = `录入延迟 P50/P95：${fmtNum(p50, 2)}s / ${fmtNum(p95, 2)}s`;
+    }
+
+    function delayClass(delaySec) {
+      if (!Number.isFinite(delaySec)) return "";
+      if (delaySec <= 5) return "delay-good";
+      if (delaySec <= 15) return "delay-warn";
+      return "delay-bad";
+    }
+
+    function setStateBadge(el, level, text) {
+      if (!el) return;
+      el.classList.remove("ok", "bad");
+      if (level === "ok") {
+        el.classList.add("ok");
+      } else if (level === "bad") {
+        el.classList.add("bad");
+      }
+      el.textContent = text || "-";
+    }
+
+    function renderRuntimeStateBar(health) {
+      if (!health || typeof health !== "object") {
+        setStateBadge(collectStateBadge, "", "-");
+        collectStateDesc.textContent = "状态未知";
+        setStateBadge(backfillStateBadge, "", "-");
+        backfillStateDesc.textContent = "状态未知";
+        setStateBadge(realtimeStateBadge, "", "-");
+        realtimeStateDesc.textContent = "状态未知";
+        return;
+      }
+      const runtimePausedNow = Boolean(health?.runtimePaused);
+      const scanJobs = Math.max(0, Number(health?.scanJobs || 0));
+      const wsConnectedNow = Boolean(health?.stats?.ws_connected);
+      const uiOnline = Boolean(health?.runtimeUiOnline);
+      const uiHeartbeatTimeoutSec = Math.max(0, Number(health?.runtimeUiHeartbeatTimeoutSec || 0));
+
+      if (runtimePausedNow) {
+        setStateBadge(collectStateBadge, "bad", "已暂停");
+        collectStateDesc.textContent = uiOnline
+          ? "采集已关闭（手动暂停）"
+          : `采集已关闭（无心跳超过 ${uiHeartbeatTimeoutSec}s）`;
+      } else {
+        setStateBadge(collectStateBadge, "ok", "运行中");
+        collectStateDesc.textContent = "采集已开启（手动控制）";
+      }
+
+      if (runtimePausedNow) {
+        setStateBadge(backfillStateBadge, "bad", "已暂停");
+        backfillStateDesc.textContent = "采集暂停时不执行回扫任务";
+      } else if (scanJobs > 0) {
+        setStateBadge(backfillStateBadge, "ok", "执行中");
+        backfillStateDesc.textContent = `当前有 ${scanJobs} 个回扫任务（队列/运行）`;
+      } else {
+        setStateBadge(backfillStateBadge, "", "待命");
+        backfillStateDesc.textContent = "无回扫任务，处于待命状态";
+      }
+
+      if (runtimePausedNow) {
+        setStateBadge(realtimeStateBadge, "bad", "已暂停");
+        realtimeStateDesc.textContent = "采集暂停时不进行实时链上更新";
+      } else if (wsConnectedNow) {
+        setStateBadge(realtimeStateBadge, "ok", "运行中");
+        realtimeStateDesc.textContent = "WS 已连接，实时更新正常";
+      } else {
+        setStateBadge(realtimeStateBadge, "bad", "异常");
+        realtimeStateDesc.textContent = "WS 未连接，实时更新中断";
+      }
+    }
+
+    function fmtNum(v, digits = 6) {
+      if (v === null || v === undefined) return "-";
+      const n = Number(v);
+      if (!Number.isFinite(n)) return String(v);
+      return n.toLocaleString("zh-CN", { maximumFractionDigits: digits });
+    }
+
+    function fmtNumFixed(v, digits = 2) {
+      if (v === null || v === undefined) return "-";
+      const n = Number(v);
+      if (!Number.isFinite(n)) return String(v);
+      return n.toLocaleString("zh-CN", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+    }
+
+    function fmtWanFixed(v, digits = 2) {
+      if (v === null || v === undefined) return "-";
+      const n = Number(v);
+      if (!Number.isFinite(n)) return String(v);
+      const w = n / 10000;
+      return `${w.toLocaleString("zh-CN", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      })}万`;
+    }
+
+    function exactNumText(v) {
+      if (v === null || v === undefined) return "-";
+      return String(v);
+    }
+
+    function tipSpanHtml(displayText, tipText) {
+      const tip = String(tipText ?? "");
+      return `<span class="ui-tip" data-tip="${escAttr(tip)}">${displayText}</span>`;
+    }
+
+    function numWithExactTitle(displayText, rawValue) {
+      return tipSpanHtml(displayText, `精确值: ${exactNumText(rawValue)}`);
+    }
+
+    function shortAddr(addr) {
+      if (!addr || addr.length < 12) return addr || "-";
+      return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    }
+
+    function shortHash(tx) {
+      if (!tx || tx.length < 18) return tx || "-";
+      return `${tx.slice(0, 10)}...${tx.slice(-8)}`;
+    }
+
+    function escAttr(v) {
+      return String(v ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function copyBtnHtml(text) {
+      if (!text) return "";
+      return `<button class="copy-btn" type="button" data-copy="${escAttr(text)}">复制</button>`;
+    }
+
+    function hideHoverTip() {
+      hoverTip.classList.remove("show");
+      hoverTip.setAttribute("aria-hidden", "true");
+      hoverTip.style.transform = "translate(-9999px, -9999px)";
+    }
+
+    function placeHoverTip(clientX, clientY) {
+      const pad = 12;
+      const offsetX = 14;
+      const offsetY = 18;
+      const rect = hoverTip.getBoundingClientRect();
+      let left = clientX + offsetX;
+      let top = clientY + offsetY;
+      if (left + rect.width + pad > window.innerWidth) {
+        left = Math.max(pad, clientX - rect.width - offsetX);
+      }
+      if (top + rect.height + pad > window.innerHeight) {
+        top = Math.max(pad, clientY - rect.height - offsetY);
+      }
+      hoverTip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    }
+
+    function showHoverTip(text, clientX, clientY) {
+      const tipText = String(text || "").trim();
+      if (!tipText) {
+        hideHoverTip();
+        return;
+      }
+      if (hoverTip.textContent !== tipText) {
+        hoverTip.textContent = tipText;
+      }
+      hoverTip.classList.add("show");
+      hoverTip.setAttribute("aria-hidden", "false");
+      placeHoverTip(clientX, clientY);
+    }
+
+    function findTipTargetAt(clientX, clientY) {
+      const el = document.elementFromPoint(clientX, clientY);
+      return el ? el.closest(".ui-tip[data-tip]") : null;
+    }
+
+    function syncHoverTipAtPointer() {
+      if (!tipMouseInside) {
+        hideHoverTip();
+        return;
+      }
+      const target = findTipTargetAt(tipPointerX, tipPointerY);
+      const tip = target ? String(target.getAttribute("data-tip") || "").trim() : "";
+      if (!tip) {
+        hideHoverTip();
+        return;
+      }
+      showHoverTip(tip, tipPointerX, tipPointerY);
+    }
+
+    function addrWithCopyHtml(addr) {
+      if (!addr) return "-";
+      const full = String(addr);
+      return `${tipSpanHtml(shortAddr(full), full)}${copyBtnHtml(full)}`;
+    }
+
+    function hashWithCopyHtml(tx) {
+      if (!tx) return "-";
+      const full = String(tx);
+      return `${tipSpanHtml(shortHash(full), full)}${copyBtnHtml(full)}`;
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return "-";
+      const d = new Date(Number(ts) * 1000);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      return d.toLocaleString();
+    }
+
+    function fmtHm(ts) {
+      if (!ts) return "-";
+      const d = new Date((Number(ts) + 8 * 3600) * 1000);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+
+    function fmtYmdHm(ts) {
+      if (!ts) return "-";
+      const d = new Date((Number(ts) + 8 * 3600) * 1000);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      return `${y}/${m}/${day} ${hh}:${mm}`;
+    }
+
+    function fmtMd(ts) {
+      if (!ts) return "-";
+      const d = new Date((Number(ts) + 8 * 3600) * 1000);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      return `${m}/${day}`;
+    }
+
+    function tsToUtc8DatetimeLocal(ts) {
+      const d = new Date((Number(ts) + 8 * 3600) * 1000);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      return `${y}-${m}-${day}T${hh}:${mm}`;
+    }
+
+    function parseUtc8DatetimeLocalToTs(v) {
+      const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+      if (!m) return null;
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      const hh = Number(m[4]);
+      const mm = Number(m[5]);
+      const utcMs = Date.UTC(y, mo - 1, d, hh - 8, mm, 0, 0);
+      return Math.floor(utcMs / 1000);
+    }
+
+    async function jget(url) {
+      const apiUrl = buildApiUrl(url);
+      const r = await fetch(apiUrl, { cache: "no-store" });
+      if (!r.ok) throw new Error(`${r.status} ${apiUrl}`);
+      return await r.json();
+    }
+
+    function normalizeRefreshMode(mode) {
+      if (mode === "normal" || mode === "fast" || mode === "super") {
+        return mode;
+      }
+      return "normal";
+    }
+
+    function loadRefreshMode() {
+      try {
+        const mode = normalizeRefreshMode(localStorage.getItem(REFRESH_MODE_STORAGE_KEY) || "");
+        if (mode !== "normal") return mode;
+        // Backward compatibility: old bool key only had fast/non-fast.
+        if (localStorage.getItem(LEGACY_FAST_MODE_STORAGE_KEY) === "1") {
+          return "fast";
+        }
+      } catch (e) {
+        // ignore
+      }
+      return "normal";
+    }
+
+    function saveRefreshMode(mode) {
+      try {
+        const normalized = normalizeRefreshMode(mode);
+        localStorage.setItem(REFRESH_MODE_STORAGE_KEY, normalized);
+        localStorage.removeItem(LEGACY_FAST_MODE_STORAGE_KEY);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function loadSavedProject() {
+      try {
+        return localStorage.getItem(PROJECT_STORAGE_KEY) || "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function saveSelectedProject(name) {
+      try {
+        if (!name) return;
+        localStorage.setItem(PROJECT_STORAGE_KEY, name);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function loadSavedDatetimeLocal(key) {
+      try {
+        const raw = (localStorage.getItem(key) || "").trim();
+        if (!raw) return "";
+        if (parseUtc8DatetimeLocalToTs(raw) === null) return "";
+        return raw;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function saveDatetimeLocal(key, value) {
+      try {
+        const raw = String(value || "").trim();
+        if (!raw) {
+          localStorage.removeItem(key);
+          return;
+        }
+        if (parseUtc8DatetimeLocalToTs(raw) === null) return;
+        localStorage.setItem(key, raw);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function setProjectDropdownOpen(open, { focusTrigger = false } = {}) {
+      projectDropdownOpen = Boolean(open);
+      projectDropdown.classList.toggle("is-open", projectDropdownOpen);
+      projectDropdownTrigger.setAttribute("aria-expanded", projectDropdownOpen ? "true" : "false");
+      projectDropdownMenu.setAttribute("aria-hidden", projectDropdownOpen ? "false" : "true");
+      if (!projectDropdownOpen && focusTrigger) {
+        projectDropdownTrigger.focus();
+      }
+    }
+
+    function syncProjectDropdownLabel() {
+      const selected = projectSelect.selectedOptions && projectSelect.selectedOptions[0];
+      const fallback = projectSelect.options && projectSelect.options.length ? projectSelect.options[0] : null;
+      const label = (selected || fallback)?.textContent || (selected || fallback)?.value || "-";
+      projectDropdownLabel.textContent = label;
+      projectDropdownTrigger.disabled = projectSelect.options.length === 0;
+    }
+
+    function renderProjectDropdownOptions() {
+      projectDropdownMenu.innerHTML = "";
+      const options = [...projectSelect.options];
+      if (!options.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.style.padding = "8px 10px";
+        empty.textContent = "暂无项目";
+        projectDropdownMenu.appendChild(empty);
+        return;
+      }
+      options.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "project-dropdown-option";
+        btn.setAttribute("role", "option");
+        btn.textContent = opt.textContent || opt.value;
+        if (opt.value === projectSelect.value) {
+          btn.classList.add("is-selected");
+          btn.setAttribute("aria-selected", "true");
+        } else {
+          btn.setAttribute("aria-selected", "false");
+        }
+        btn.addEventListener("click", () => {
+          if (projectSelect.value === opt.value) {
+            setProjectDropdownOpen(false, { focusTrigger: true });
+            return;
+          }
+          projectSelect.value = opt.value;
+          projectSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          setProjectDropdownOpen(false, { focusTrigger: true });
+        });
+        projectDropdownMenu.appendChild(btn);
+      });
+    }
+
+    function syncProjectDropdownUi() {
+      syncProjectDropdownLabel();
+      renderProjectDropdownOptions();
+    }
+
+    function initProjectDropdown() {
+      projectDropdownTrigger.addEventListener("click", () => {
+        if (projectDropdownTrigger.disabled) return;
+        setProjectDropdownOpen(!projectDropdownOpen);
+      });
+      projectDropdownTrigger.addEventListener("keydown", (ev) => {
+        if (projectDropdownTrigger.disabled) return;
+        if (ev.key === "Enter" || ev.key === " " || ev.key === "ArrowDown") {
+          ev.preventDefault();
+          setProjectDropdownOpen(true);
+          return;
+        }
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          setProjectDropdownOpen(false);
+        }
+      });
+      projectDropdownMenu.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          setProjectDropdownOpen(false, { focusTrigger: true });
+        }
+      });
+      document.addEventListener("pointerdown", (ev) => {
+        if (!projectDropdownOpen) return;
+        if (projectDropdown.contains(ev.target)) return;
+        setProjectDropdownOpen(false);
+      });
+      window.addEventListener("blur", () => {
+        setProjectDropdownOpen(false);
+      });
+      syncProjectDropdownUi();
+    }
+
+    function setDbBatchSizeUi(value) {
+      const n = Math.max(1, Math.min(100, Number(value) || 1));
+      currentDbBatchSize = n;
+      dbBatchInput.value = String(n);
+      document.querySelectorAll(".db-batch-preset").forEach((btn) => {
+        const v = Number(btn.getAttribute("data-batch-size"));
+        btn.classList.toggle("is-active", v === n);
+      });
+      dbBatchMessage.textContent = `当前：${n}`;
+    }
+
+    function stopRuntimeHeartbeatTimer() {
+      if (runtimeHeartbeatTimer) {
+        clearInterval(runtimeHeartbeatTimer);
+        runtimeHeartbeatTimer = null;
+      }
+    }
+
+    async function sendRuntimeHeartbeat() {
+      if (runtimePaused || runtimeHeartbeatInFlight) {
+        return false;
+      }
+      runtimeHeartbeatInFlight = true;
+      try {
+        const data = await requestJsonWithBody("/runtime/heartbeat", "POST", {});
+        if (typeof data.runtimePaused === "boolean") {
+          setRuntimePauseUi(Boolean(data.runtimePaused));
+        }
+        return true;
+      } catch (e) {
+        return false;
+      } finally {
+        runtimeHeartbeatInFlight = false;
+      }
+    }
+
+    function restartRuntimeHeartbeatTimer() {
+      stopRuntimeHeartbeatTimer();
+      if (runtimePaused) {
+        return;
+      }
+      sendRuntimeHeartbeat().catch(() => {});
+      runtimeHeartbeatTimer = setInterval(() => {
+        sendRuntimeHeartbeat().catch(() => {});
+      }, RUNTIME_HEARTBEAT_MS);
+    }
+
+    function setRuntimePauseUi(paused) {
+      const prevPaused = runtimePaused;
+      runtimePaused = Boolean(paused);
+      runtimePauseBtn.classList.toggle("is-active", runtimePaused);
+      runtimePauseBtn.textContent = runtimePaused
+        ? "采集已暂停（点击恢复）"
+        : "采集运行中（点击暂停）";
+      scanRangeBtn.disabled = runtimePaused || Boolean(currentScanJobId);
+      if (runtimePaused) {
+        stopRuntimeHeartbeatTimer();
+      } else if (prevPaused || !runtimeHeartbeatTimer) {
+        restartRuntimeHeartbeatTimer();
+      }
+    }
+
+    function renderMonitoredWallets(rows) {
+      monitoredWallets = (rows || [])
+        .map((x) => String(x || "").trim().toLowerCase())
+        .filter((x) => x);
+      walletConfigList.innerHTML = "";
+      if (!monitoredWallets.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "当前未配置监控钱包。";
+        walletConfigList.appendChild(empty);
+        return;
+      }
+      monitoredWallets.forEach((wallet) => {
+        const row = document.createElement("div");
+        row.className = "wallet-chip";
+        row.innerHTML = `
+          <span>${addrWithCopyHtml(wallet)}</span>
+          <button class="pill wallet-recalc-btn" type="button" data-wallet-recalc="${escAttr(wallet)}">重算当前项目</button>
+          <button class="pill wallet-remove-btn" type="button" data-wallet-remove="${escAttr(wallet)}">删除</button>
+        `;
+        walletConfigList.appendChild(row);
+      });
+    }
+
+    function restartAutoRefreshTimer() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+      }
+      autoRefreshTimer = setInterval(() => refreshAllSafe().catch(console.error), autoRefreshMs);
+    }
+
+    function refreshModeMs(mode) {
+      if (mode === "super") return SUPER_REFRESH_MS;
+      if (mode === "fast") return FAST_REFRESH_MS;
+      return NORMAL_REFRESH_MS;
+    }
+
+    function setRefreshMode(mode, { persist = true } = {}) {
+      const nextMode = normalizeRefreshMode(mode);
+      currentRefreshMode = nextMode;
+      autoRefreshMs = refreshModeMs(nextMode);
+      if (nextMode !== "super") {
+        superModeOverloadHits = 0;
+      }
+      fastModeBtn.textContent =
+        nextMode === "fast" ? "极速模式：开(0.5s)" : "极速模式：关(0.5s)";
+      superModeBtn.textContent =
+        nextMode === "super" ? "超速模式：开(0.25s)" : "超速模式：关(0.25s)";
+      fastModeBtn.classList.toggle("is-active", nextMode === "fast");
+      superModeBtn.classList.toggle("is-active", nextMode === "super");
+      restartAutoRefreshTimer();
+      if (persist) {
+        saveRefreshMode(nextMode);
+      }
+    }
+
+    async function copyText(text) {
+      const val = String(text || "");
+      if (!val) return false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(val);
+          return true;
+        }
+      } catch (e) {
+        // fallthrough
+      }
+      const ta = document.createElement("textarea");
+      ta.value = val;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (e) {
+        ok = false;
+      }
+      ta.remove();
+      return ok;
+    }
+
+    async function loadMeta() {
+      const meta = await jget("/meta");
+      const current = projectSelect.value || loadSavedProject();
+      if (Array.isArray(meta.launchConfigs)) {
+        launchConfigRowsCache = meta.launchConfigs;
+      }
+      projectSelect.innerHTML = "";
+      for (const p of meta.projects || []) {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        projectSelect.appendChild(opt);
+      }
+      if (current && (meta.projects || []).includes(current)) {
+        projectSelect.value = current;
+      } else if (meta.projects && meta.projects.length) {
+        projectSelect.value = meta.projects[0];
+      }
+      syncProjectDropdownUi();
+      saveSelectedProject(projectSelect.value);
+      if (meta.fixedDefaults) {
+        fixedInfo.innerHTML =
+          `固定参数：fee_addr=${addrWithCopyHtml(meta.fixedDefaults.fee_addr)} | ` +
+          `tax_addr=${addrWithCopyHtml(meta.fixedDefaults.tax_addr)} | ` +
+          `supply=${fmtNum(meta.fixedDefaults.token_total_supply, 0)} | ` +
+          `fee_rate=${fmtNum(meta.fixedDefaults.fee_rate, 6)}`;
+      }
+      if (meta.runtimeTuning && Number.isFinite(Number(meta.runtimeTuning.db_batch_size))) {
+        setDbBatchSizeUi(Number(meta.runtimeTuning.db_batch_size));
+      }
+      if (meta.runtimeTuning && typeof meta.runtimeTuning.runtime_paused === "boolean") {
+        setRuntimePauseUi(Boolean(meta.runtimeTuning.runtime_paused));
+      }
+      renderMonitoredWallets(meta.wallets || []);
+      syncLaunchFormToSelectedProject(projectSelect.value);
+      return meta;
+    }
+
+    function initScanInputsIfEmpty() {
+      const now = Math.floor(Date.now() / 1000);
+      const savedStart = loadSavedDatetimeLocal(SCAN_START_STORAGE_KEY);
+      const savedEnd = loadSavedDatetimeLocal(SCAN_END_STORAGE_KEY);
+      if (!scanEndUtc8.value) {
+        scanEndUtc8.value = savedEnd || tsToUtc8DatetimeLocal(now);
+      }
+      if (!scanStartUtc8.value) {
+        scanStartUtc8.value = savedStart || tsToUtc8DatetimeLocal(now - 3600);
+      }
+      saveDatetimeLocal(SCAN_START_STORAGE_KEY, scanStartUtc8.value);
+      saveDatetimeLocal(SCAN_END_STORAGE_KEY, scanEndUtc8.value);
+    }
+
+    function initMinuteInputsIfEmpty() {
+      const now = Math.floor(Date.now() / 1000);
+      const savedStart = loadSavedDatetimeLocal(MINUTE_START_STORAGE_KEY);
+      const savedEnd = loadSavedDatetimeLocal(MINUTE_END_STORAGE_KEY);
+      if (!minuteEndUtc8.value) {
+        minuteEndUtc8.value = savedEnd || tsToUtc8DatetimeLocal(now);
+      }
+      if (!minuteStartUtc8.value) {
+        minuteStartUtc8.value = savedStart || tsToUtc8DatetimeLocal(now - 3600);
+      }
+      saveDatetimeLocal(MINUTE_START_STORAGE_KEY, minuteStartUtc8.value);
+      saveDatetimeLocal(MINUTE_END_STORAGE_KEY, minuteEndUtc8.value);
+      const startTs = parseUtc8DatetimeLocalToTs(minuteStartUtc8.value);
+      const endTs = parseUtc8DatetimeLocalToTs(minuteEndUtc8.value);
+      if (startTs && endTs && endTs >= startTs) {
+        minuteRangeApplied = { from: startTs, to: endTs };
+      }
+    }
+
+    function getMinuteRangeTs() {
+      if (minuteRangeApplied && minuteRangeApplied.to >= minuteRangeApplied.from) {
+        return minuteRangeApplied;
+      }
+      const startTs = parseUtc8DatetimeLocalToTs(minuteStartUtc8.value);
+      const endTs = parseUtc8DatetimeLocalToTs(minuteEndUtc8.value);
+      if (startTs && endTs && endTs >= startTs) {
+        minuteRangeApplied = { from: startTs, to: endTs };
+        return minuteRangeApplied;
+      }
+      const now = Math.floor(Date.now() / 1000);
+      return { from: now - 3600, to: now };
+    }
+
+    async function applyMinuteRange() {
+      const startTs = parseUtc8DatetimeLocalToTs(minuteStartUtc8.value);
+      const endTs = parseUtc8DatetimeLocalToTs(minuteEndUtc8.value);
+      if (!startTs || !endTs) {
+        throw new Error("请填写有效的分钟区间 UTC+8 时间");
+      }
+      if (endTs < startTs) {
+        throw new Error("分钟区间结束时间不能早于开始时间");
+      }
+      minuteRangeApplied = { from: startTs, to: endTs };
+      await refreshAllSafe();
+      minuteRangeMessage.textContent = `已应用分钟区间：${fmtTs(startTs)} ~ ${fmtTs(endTs)}`;
+      return true;
+    }
+
+    function fillLaunchForm(row) {
+      lcName.value = row.name || "";
+      lcInternalPool.value = row.internal_pool_addr || "";
+    }
+
+    function syncLaunchFormToSelectedProject(preferName) {
+      const rows = launchConfigRowsCache || [];
+      if (!rows.length) {
+        return false;
+      }
+      const targetName = String(preferName || projectSelect.value || "").trim();
+      const row =
+        rows.find((x) => String(x?.name || "").trim() === targetName) || rows[0];
+      fillLaunchForm(row);
+      return true;
+    }
+
+    function renderLaunchConfigTable(rows) {
+      launchConfigBody.innerHTML = "";
+      rows.forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.name || "-"}</td>
+          <td>${addrWithCopyHtml(r.internal_pool_addr)}</td>
+          <td>${r.is_enabled ? "是" : "否"}</td>
+        `;
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", () => fillLaunchForm(r));
+        launchConfigBody.appendChild(tr);
+      });
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="3" class="muted">暂无项目配置。</td>`;
+        launchConfigBody.appendChild(tr);
+      }
+    }
+
+    async function loadLaunchConfigs() {
+      const data = await jget("/launch-configs");
+      const rows = data.items || [];
+      launchConfigRowsCache = rows;
+      renderLaunchConfigTable(rows);
+      syncLaunchFormToSelectedProject();
+      return rows;
+    }
+
+    async function requestJsonWithBody(url, method, payload) {
+      const apiUrl = buildApiUrl(url);
+      const resp = await fetch(apiUrl, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: payload ? JSON.stringify(payload) : undefined
+      });
+      const raw = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        throw new Error(`接口返回非 JSON（可能后端版本未更新）：${raw.slice(0, 100)}`);
+      }
+      if (!resp.ok) {
+        throw new Error(data.error || `${method} 失败`);
+      }
+      return data;
+    }
+
+    async function saveLaunchConfig() {
+      const payload = {
+        name: lcName.value.trim(),
+        internal_pool_addr: lcInternalPool.value.trim(),
+        switch_only: lcSwitchOnly.checked,
+        is_enabled: true
+      };
+      const data = await requestJsonWithBody("/launch-configs", "POST", payload);
+      lcMessage.textContent = `保存成功，当前监控项目：${(data.monitoringProjects || []).join(", ") || "-"}`;
+      await loadMeta();
+      if (payload.name && [...projectSelect.options].some(o => o.value === payload.name)) {
+        projectSelect.value = payload.name;
+        syncProjectDropdownUi();
+        saveSelectedProject(projectSelect.value);
+      }
+      launchConfigRowsCache = data.items || [];
+      renderLaunchConfigTable(launchConfigRowsCache);
+      syncLaunchFormToSelectedProject(payload.name || projectSelect.value);
+      await refreshAllSafe();
+    }
+
+    async function deleteLaunchConfig() {
+      const name = lcName.value.trim();
+      if (!name) {
+        throw new Error("请先输入要删除的项目名");
+      }
+      const ok = confirm(`确认删除项目 ${name} ?\n仅删除配置，不删除历史统计数据。`);
+      if (!ok) {
+        lcMessage.textContent = "已取消删除";
+        return false;
+      }
+      const data = await requestJsonWithBody(`/launch-configs/${encodeURIComponent(name)}`, "DELETE");
+      lcMessage.textContent = `删除成功，当前监控项目：${(data.monitoringProjects || []).join(", ") || "无"}`;
+      await loadMeta();
+      launchConfigRowsCache = data.items || [];
+      renderLaunchConfigTable(launchConfigRowsCache);
+      if (![...projectSelect.options].some(o => o.value === projectSelect.value) && projectSelect.options.length > 0) {
+        projectSelect.value = projectSelect.options[0].value;
+      }
+      syncProjectDropdownUi();
+      saveSelectedProject(projectSelect.value);
+      syncLaunchFormToSelectedProject(projectSelect.value);
+      await refreshAllSafe();
+      return true;
+    }
+
+    async function addMonitoredWallet() {
+      const wallet = walletInput.value.trim();
+      if (!wallet) {
+        throw new Error("请输入钱包地址");
+      }
+      const data = await requestJsonWithBody("/wallet-configs", "POST", { wallet });
+      renderMonitoredWallets(data.items || []);
+      walletInput.value = "";
+      walletCfgMessage.textContent = `钱包已保存，当前监控数：${data.count ?? (data.items || []).length}`;
+      await refreshAllSafe();
+      return true;
+    }
+
+    async function deleteMonitoredWallet(wallet) {
+      const target = String(wallet || "").trim();
+      if (!target) {
+        throw new Error("缺少钱包地址");
+      }
+      const data = await requestJsonWithBody(
+        `/wallet-configs/${encodeURIComponent(target)}`,
+        "DELETE"
+      );
+      renderMonitoredWallets(data.items || []);
+      walletCfgMessage.textContent = `钱包已删除，当前监控数：${data.count ?? (data.items || []).length}`;
+      await refreshAllSafe();
+      return true;
+    }
+
+    async function recalcWalletForCurrentProject(wallet) {
+      const project = String(projectSelect.value || "").trim();
+      if (!project) {
+        throw new Error("请先选择项目");
+      }
+      const target = String(wallet || "").trim();
+      if (!target) {
+        throw new Error("缺少钱包地址");
+      }
+      const data = await requestJsonWithBody("/wallet-recalc", "POST", {
+        project,
+        wallet: target,
+      });
+      walletCfgMessage.textContent =
+        `重算完成：项目=${data.project} 钱包=${shortAddr(data.wallet)} ` +
+        `事件=${data.eventCount} 代币=${data.tokenCount} 耗时=${data.durationMs}ms`;
+      await refreshAllSafe();
+      return true;
+    }
+
+    async function applyDbBatchSize(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || !Number.isInteger(n)) {
+        throw new Error("DB_BATCH_SIZE 必须是整数");
+      }
+      if (n < 1 || n > 100) {
+        throw new Error("DB_BATCH_SIZE 范围是 1~100");
+      }
+      const data = await requestJsonWithBody("/runtime/db-batch-size", "POST", {
+        db_batch_size: n,
+      });
+      setDbBatchSizeUi(Number(data.dbBatchSize || n));
+      dbBatchMessage.textContent = `已应用：${Number(data.dbBatchSize || n)}`;
+      return true;
+    }
+
+    async function loadRuntimePauseState() {
+      const data = await jget("/runtime/pause");
+      setRuntimePauseUi(Boolean(data.runtimePaused));
+      return runtimePaused;
+    }
+
+    async function toggleRuntimePause() {
+      const targetPaused = !runtimePaused;
+      const data = await requestJsonWithBody("/runtime/pause", "POST", {
+        paused: targetPaused,
+      });
+      setRuntimePauseUi(Boolean(data.runtimePaused));
+      refreshMessage.textContent = runtimePaused
+        ? "采集已暂停：链上监听/回扫/价格轮询已停止"
+        : "采集已恢复：链上监听与回扫继续运行（无心跳 2 小时后自动暂停）";
+      await refreshAllSafe();
+      return true;
+    }
+
+    async function pollScanJob(jobId) {
+      const started = Date.now();
+      while (Date.now() - started < 1000 * 60 * 20) {
+        const job = await jget(`/scan-jobs/${encodeURIComponent(jobId)}`);
+        const status = job.status || "-";
+        const chunkInfo = `${job.processedChunks || 0}/${job.totalChunks || 0}`;
+        refreshMessage.textContent =
+          `回扫任务 ${jobId} | 状态=${status} | 分块=${chunkInfo} | 扫描Tx=${job.scannedTx || 0} | 入库增量=${job.insertedDelta || 0}`;
+        if (status === "done") {
+          await loadMeta();
+          await refreshAllSafe();
+          return true;
+        }
+        if (status === "canceled") {
+          refreshMessage.textContent = `回扫任务 ${jobId} 已取消`;
+          await loadMeta();
+          await refreshAllSafe();
+          return false;
+        }
+        if (status === "failed") {
+          throw new Error(job.error || "回扫失败");
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      throw new Error("回扫等待超时，请稍后手动刷新");
+    }
+
+    async function scanRangeByUtc8() {
+      const startTs = parseUtc8DatetimeLocalToTs(scanStartUtc8.value);
+      const endTs = parseUtc8DatetimeLocalToTs(scanEndUtc8.value);
+      if (!startTs || !endTs) {
+        throw new Error("请填写有效的 UTC+8 时间区间");
+      }
+      if (endTs < startTs) {
+        throw new Error("结束时间不能早于开始时间");
+      }
+      const project = projectSelect.value || null;
+      const create = await requestJsonWithBody("/scan-range", "POST", {
+        project,
+        start_ts: startTs,
+        end_ts: endTs,
+      });
+      const jobId = create.jobId;
+      if (!jobId) {
+        throw new Error("回扫任务创建失败");
+      }
+      currentScanJobId = jobId;
+      scanCancelBtn.disabled = false;
+      setRuntimePauseUi(runtimePaused);
+      refreshMessage.textContent = `回扫任务已创建：${jobId}，开始执行...`;
+      try {
+        const ok = await pollScanJob(jobId);
+        return ok;
+      } finally {
+        if (currentScanJobId === jobId) {
+          currentScanJobId = null;
+          scanCancelBtn.disabled = true;
+          setRuntimePauseUi(runtimePaused);
+        }
+      }
+    }
+
+    async function cancelScanRangeJob() {
+      if (!currentScanJobId) {
+        throw new Error("当前没有可取消的回扫任务");
+      }
+      const jobId = currentScanJobId;
+      const resp = await requestJsonWithBody(
+        `/scan-jobs/${encodeURIComponent(jobId)}/cancel`,
+        "POST",
+        {}
+      );
+      if (resp?.alreadyFinal) {
+        refreshMessage.textContent = `任务 ${jobId} 已结束`;
+        return false;
+      }
+      refreshMessage.textContent = `已发送取消请求：${jobId}`;
+      return true;
+    }
+
+    function drawMinuteChart(rows) {
+      const dpr = window.devicePixelRatio || 1;
+      const wrap = chart.parentElement;
+      const baseW = Math.max(900, (wrap?.clientWidth || chart.clientWidth || 900));
+      const h = chart.clientHeight || 320;
+      const w = rows.length ? Math.max(baseW, 84 + rows.length * 52) : baseW;
+      const cssWidth = `${w}px`;
+      if (lastChartCssWidth !== cssWidth) {
+        chart.style.width = cssWidth;
+        lastChartCssWidth = cssWidth;
+      }
+      const pixelW = Math.floor(w * dpr);
+      const pixelH = Math.floor(h * dpr);
+      if (chart.width !== pixelW || chart.height !== pixelH) {
+        chart.width = pixelW;
+        chart.height = pixelH;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "rgba(13, 24, 48, 0.76)";
+      ctx.fillRect(0, 0, w, h);
+
+      if (!rows.length) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
+        ctx.font = "13px Cascadia Mono, monospace";
+        ctx.fillText("暂无分钟级数据", 12, 24);
+        return;
+      }
+
+      const points = rows.map(x => ({
+        x: Number(x.minute_key),
+        y: toNum(x.minute_spent_v)
+      }));
+      const maxY = Math.max(...points.map(p => p.y), 1e-12);
+
+      const padL = 56;
+      const padR = 16;
+      const padT = 26;
+      const padB = 58;
+      const cw = w - padL - padR;
+      const ch = h - padT - padB;
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = padT + (ch * i) / 4;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(w - padR, y);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
+      ctx.font = "11px Cascadia Mono, monospace";
+      for (let i = 0; i <= 4; i++) {
+        const value = maxY * (1 - i / 4);
+        const y = padT + (ch * i) / 4;
+        ctx.fillText(fmtNum(Math.round(value), 0), 6, y + 4);
+      }
+
+      const slot = cw / Math.max(points.length, 1);
+      const barW = Math.max(4, Math.min(24, slot * 0.72));
+      const labelStep = points.length > 120 ? Math.ceil(points.length / 120) : 1;
+      const xLabelStep = Math.max(labelStep, Math.ceil(46 / Math.max(slot, 1)));
+      const firstTickLabel = points.length <= 8 ? fmtYmdHm(points[0]?.x) : fmtMd(points[0]?.x);
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const barH = Math.max(1, (p.y / maxY) * ch);
+        const x = padL + i * slot + (slot - barW) / 2;
+        const y = padT + ch - barH;
+
+        const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+        grad.addColorStop(0, "rgba(76, 201, 240, 0.82)");
+        grad.addColorStop(1, "rgba(76, 201, 240, 0.28)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, y, barW, barH);
+
+        ctx.strokeStyle = "rgba(76, 201, 240, 0.42)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, barW - 1), Math.max(0, barH - 1));
+
+        if (i % labelStep === 0 || i === points.length - 1) {
+          const valText = fmtNum(Math.round(p.y), 0);
+          ctx.font = "700 12px 'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace";
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(7, 11, 20, 0.88)";
+          ctx.fillStyle = "rgba(255, 243, 190, 0.98)";
+          ctx.shadowColor = "rgba(76, 201, 240, 0.55)";
+          ctx.shadowBlur = 10;
+          const labelY = Math.max(10, y - 4);
+          ctx.strokeText(valText, x + barW / 2, labelY);
+          ctx.fillText(valText, x + barW / 2, labelY);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+        }
+      }
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
+      ctx.font = "10px Cascadia Mono, monospace";
+      ctx.textBaseline = "top";
+      for (let i = 0; i < points.length; i++) {
+        const isFirst = i === 0;
+        const isLast = i === points.length - 1;
+        if (!isFirst && !isLast && i % xLabelStep !== 0) {
+          continue;
+        }
+        const x = padL + i * slot + slot / 2;
+        const label = isFirst ? firstTickLabel : fmtHm(points[i].x);
+        if (isFirst) {
+          ctx.textAlign = "left";
+          ctx.fillText(label, padL, h - 20);
+        } else if (isLast) {
+          ctx.textAlign = "right";
+          ctx.fillText(label, w - padR, h - 20);
+        } else {
+          ctx.textAlign = "center";
+          ctx.fillText(label, x, h - 20);
+        }
+      }
+      ctx.textAlign = "start";
+    }
+
+    function renderWalletTable(rows) {
+      walletBody.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.project || "-"}</td>
+          <td>${addrWithCopyHtml(r.wallet)}</td>
+          <td>${addrWithCopyHtml(r.token_addr)}</td>
+          <td>${numWithExactTitle(fmtNum(r.sum_spent_v_est, 0), r.sum_spent_v_est)}</td>
+          <td>${numWithExactTitle(fmtWanFixed(r.sum_token_bought, 2), r.sum_token_bought)}</td>
+          <td>${numWithExactTitle(fmtWanFixed(r.breakeven_fdv_usd, 2), r.breakeven_fdv_usd)}</td>
+          <td>${fmtTs(r.updated_at)}</td>
+        `;
+        walletBody.appendChild(tr);
+      }
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="7" class="muted">暂无钱包持仓数据。</td>`;
+        walletBody.appendChild(tr);
+      }
+    }
+
+    function renderLeaderTable(rows) {
+      leaderBody.innerHTML = "";
+      rows.forEach((r, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${addrWithCopyHtml(r.buyer)}</td>
+          <td>${numWithExactTitle(fmtNum(r.sum_spent_v_est, 0), r.sum_spent_v_est)}</td>
+          <td>${numWithExactTitle(fmtWanFixed(r.sum_token_bought, 2), r.sum_token_bought)}</td>
+          <td>${numWithExactTitle(fmtWanFixed(r.breakeven_fdv_usd, 2), r.breakeven_fdv_usd)}</td>
+          <td>${fmtTs(r.last_tx_time)}</td>
+        `;
+        leaderBody.appendChild(tr);
+      });
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="6" class="muted">暂无大户榜数据。</td>`;
+        leaderBody.appendChild(tr);
+      }
+    }
+
+    function renderTxDelayTable(rows) {
+      txDelayBody.innerHTML = "";
+      rows.forEach((r) => {
+        const delaySec = Number(r.delay_sec);
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${hashWithCopyHtml(r.tx_hash)}</td>
+          <td>${fmtTs(r.block_timestamp)}</td>
+          <td>${fmtTs(r.recorded_at)}</td>
+          <td class="${delayClass(delaySec)}">${fmtNum(delaySec, 0)}</td>
+        `;
+        txDelayBody.appendChild(tr);
+      });
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="4" class="muted">暂无交易录入延迟数据。</td>`;
+        txDelayBody.appendChild(tr);
+      }
+      updateDelayPerf(rows);
+    }
+
+    async function refreshAll() {
+      const project = projectSelect.value;
+      const range = getMinuteRangeTs();
+      const from = range.from;
+      const to = range.to;
+      const walletUrl = project
+        ? `/mywallets?project=${encodeURIComponent(project)}`
+        : "/mywallets";
+      const tasks = [
+        jget("/health"),
+        jget(walletUrl),
+      ];
+      if (project) {
+        tasks.push(jget(`/minutes?project=${encodeURIComponent(project)}&from=${from}&to=${to}`));
+        tasks.push(jget(`/leaderboard?project=${encodeURIComponent(project)}&top=20`));
+        tasks.push(jget(`/event-delays?project=${encodeURIComponent(project)}&limit=80`));
+        tasks.push(jget(`/project-tax?project=${encodeURIComponent(project)}`));
+      } else {
+        tasks.push(Promise.resolve({ items: [] }));
+        tasks.push(Promise.resolve({ items: [] }));
+        tasks.push(Promise.resolve({ items: [] }));
+        tasks.push(Promise.resolve({ sum_tax_v: "0" }));
+      }
+      const [health, wallets, minutes, leader, txDelays, projectTax] = await Promise.all(tasks);
+      if (typeof health.runtimePaused === "boolean") {
+        setRuntimePauseUi(health.runtimePaused);
+      }
+      renderRuntimeStateBar(health);
+
+      wsStatus.innerHTML = health.stats?.ws_connected
+        ? `<span class="status ok">已连接</span>`
+        : `<span class="status bad">未连接</span>`;
+      priceValue.innerHTML = numWithExactTitle(fmtNumFixed(health.price, 4), health.price);
+      queueValue.textContent = `${health.queueSize} / ${health.pendingTx}`;
+      parsedValue.textContent = `${health.stats?.parsed_events || 0} / ${health.stats?.inserted_events || 0}`;
+      projectTaxValue.innerHTML = project
+        ? numWithExactTitle(fmtNum(projectTax?.sum_tax_v ?? 0, 2), projectTax?.sum_tax_v ?? 0)
+        : "-";
+
+      const minuteRows = minutes.items || [];
+      drawMinuteChart(minuteRows);
+      minuteMeta.textContent = `项目=${project || "-"} | 点数=${minuteRows.length} | 从=${fmtTs(from)} | 到=${fmtTs(to)}`;
+
+      renderWalletTable(wallets.items || []);
+      renderLeaderTable(leader.items || []);
+      renderTxDelayTable(txDelays.items || []);
+    }
+
+    async function refreshAllSafe() {
+      if (refreshInFlight) {
+        refreshQueued = true;
+        return false;
+      }
+      refreshInFlight = true;
+      const startedAt = performance.now();
+      let ok = false;
+      try {
+        await refreshAll();
+        ok = true;
+        return true;
+      } finally {
+        const costMs = Math.round(performance.now() - startedAt);
+        refreshPerf.textContent = ok ? `刷新耗时：${costMs}ms` : `刷新耗时：失败(${costMs}ms)`;
+        if (currentRefreshMode === "super") {
+          const thresholdMs = Math.round(SUPER_REFRESH_MS * SUPER_MODE_GUARD_RATIO);
+          if (!ok || costMs > thresholdMs) {
+            superModeOverloadHits += 1;
+          } else {
+            superModeOverloadHits = 0;
+          }
+          if (superModeOverloadHits >= SUPER_MODE_GUARD_HITS) {
+            setRefreshMode("fast");
+            superModeOverloadHits = 0;
+            refreshMessage.textContent = `超速模式自动降级：刷新耗时连续偏高（>${thresholdMs}ms）`;
+          }
+        }
+        refreshInFlight = false;
+        if (refreshQueued) {
+          refreshQueued = false;
+          setTimeout(() => refreshAllSafe().catch(console.error), 0);
+        }
+      }
+    }
+
+    async function boot() {
+      try {
+        initProjectDropdown();
+        initScanInputsIfEmpty();
+        initMinuteInputsIfEmpty();
+        await loadMeta();
+        if (!Number.isFinite(currentDbBatchSize)) {
+          try {
+            const tuning = await jget("/runtime/db-batch-size");
+            if (Number.isFinite(Number(tuning.dbBatchSize))) {
+              setDbBatchSizeUi(Number(tuning.dbBatchSize));
+            }
+          } catch (e) {
+            // ignore older backend
+          }
+        }
+        try {
+          await loadRuntimePauseState();
+        } catch (e) {
+          // ignore older backend
+        }
+        await loadLaunchConfigs();
+        await refreshAllSafe();
+        const minuteRange = getMinuteRangeTs();
+        minuteRangeMessage.textContent = `当前分钟区间：${fmtTs(minuteRange.from)} ~ ${fmtTs(minuteRange.to)}`;
+        refreshMessage.textContent = "已就绪";
+      } catch (e) {
+        wsStatus.innerHTML = `<span class="status bad">初始化失败</span>`;
+        renderRuntimeStateBar(null);
+        lcMessage.textContent = String(e.message || e);
+        refreshMessage.textContent = `初始化失败：${e.message || e}`;
+        console.error(e);
+      }
+    }
+
+    async function runButtonAction(button, texts, action, messageEl) {
+      const old = button.textContent;
+      button.disabled = true;
+      button.textContent = texts.loading;
+      try {
+        const result = await action();
+        if (result === false) {
+          button.textContent = old;
+          return;
+        }
+        button.textContent = texts.success;
+      } catch (e) {
+        button.textContent = texts.failed;
+        if (messageEl) {
+          messageEl.textContent = `${texts.failed}：${e.message || e}`;
+        }
+      } finally {
+        setTimeout(() => {
+          button.disabled = false;
+          button.textContent = old;
+        }, 900);
+      }
+    }
+
+    document.addEventListener("click", async (ev) => {
+      const recalcBtn = ev.target.closest(".wallet-recalc-btn");
+      if (recalcBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const wallet = recalcBtn.getAttribute("data-wallet-recalc") || "";
+        const old = recalcBtn.textContent || "重算当前项目";
+        recalcBtn.disabled = true;
+        recalcBtn.textContent = "重算中...";
+        try {
+          await recalcWalletForCurrentProject(wallet);
+          recalcBtn.textContent = "已重算";
+        } catch (e) {
+          recalcBtn.textContent = "失败";
+          walletCfgMessage.textContent = `重算失败：${e.message || e}`;
+        } finally {
+          setTimeout(() => {
+            recalcBtn.disabled = false;
+            recalcBtn.textContent = old;
+          }, 900);
+        }
+        return;
+      }
+
+      const removeBtn = ev.target.closest(".wallet-remove-btn");
+      if (removeBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const wallet = removeBtn.getAttribute("data-wallet-remove") || "";
+        const old = removeBtn.textContent || "删除";
+        removeBtn.disabled = true;
+        removeBtn.textContent = "删除中...";
+        try {
+          await deleteMonitoredWallet(wallet);
+          removeBtn.textContent = "已删除";
+        } catch (e) {
+          removeBtn.textContent = "失败";
+          walletCfgMessage.textContent = `删除失败：${e.message || e}`;
+        } finally {
+          setTimeout(() => {
+            removeBtn.disabled = false;
+            removeBtn.textContent = old;
+          }, 900);
+        }
+        return;
+      }
+
+      const btn = ev.target.closest(".copy-btn");
+      if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const text = btn.getAttribute("data-copy") || "";
+      if (!text) return;
+      const ok = await copyText(text);
+      const old = btn.textContent;
+      btn.textContent = ok ? "已复制" : "失败";
+      refreshMessage.textContent = ok ? `已复制：${shortHash(text)}` : "复制失败";
+      setTimeout(() => {
+        btn.textContent = old || "复制";
+      }, 900);
+    });
+
+    window.addEventListener("pointermove", (ev) => {
+      tipMouseInside = true;
+      tipPointerX = ev.clientX;
+      tipPointerY = ev.clientY;
+      syncHoverTipAtPointer();
+    }, { passive: true });
+    window.addEventListener("pointerleave", () => {
+      tipMouseInside = false;
+      hideHoverTip();
+    });
+    window.addEventListener("blur", () => {
+      tipMouseInside = false;
+      hideHoverTip();
+    });
+    // Keep tooltip stable even when table rows are re-rendered by high-frequency refresh.
+    setInterval(() => {
+      if (tipMouseInside) {
+        syncHoverTipAtPointer();
+      }
+    }, 120);
+
+    runtimePauseBtn.addEventListener("click", async () => {
+      if (runtimePauseToggleInFlight) {
+        return;
+      }
+      runtimePauseToggleInFlight = true;
+      const oldText = runtimePauseBtn.textContent;
+      runtimePauseBtn.disabled = true;
+      runtimePauseBtn.textContent = "切换中...";
+      try {
+        await toggleRuntimePause();
+      } catch (e) {
+        runtimePauseBtn.textContent = oldText;
+        refreshMessage.textContent = `切换失败：${e.message || e}`;
+      } finally {
+        runtimePauseToggleInFlight = false;
+        runtimePauseBtn.disabled = false;
+        setRuntimePauseUi(runtimePaused);
+      }
+    });
+    refreshBtn.addEventListener("click", () => {
+      runButtonAction(
+        refreshBtn,
+        { loading: "刷新中...", success: "已刷新", failed: "刷新失败" },
+        async () => {
+          await refreshAllSafe();
+          refreshMessage.textContent = `刷新成功：${new Date().toLocaleTimeString()}`;
+        },
+        refreshMessage
+      ).catch(console.error);
+    });
+    scanRangeBtn.addEventListener("click", () => {
+      runButtonAction(
+        scanRangeBtn,
+        { loading: "回扫中...", success: "回扫完成", failed: "回扫失败" },
+        scanRangeByUtc8,
+        refreshMessage
+      ).catch(console.error);
+    });
+    scanStartUtc8.addEventListener("change", () => {
+      saveDatetimeLocal(SCAN_START_STORAGE_KEY, scanStartUtc8.value);
+    });
+    scanEndUtc8.addEventListener("change", () => {
+      saveDatetimeLocal(SCAN_END_STORAGE_KEY, scanEndUtc8.value);
+    });
+    minuteStartUtc8.addEventListener("change", () => {
+      saveDatetimeLocal(MINUTE_START_STORAGE_KEY, minuteStartUtc8.value);
+    });
+    minuteEndUtc8.addEventListener("change", () => {
+      saveDatetimeLocal(MINUTE_END_STORAGE_KEY, minuteEndUtc8.value);
+    });
+    scanCancelBtn.addEventListener("click", () => {
+      runButtonAction(
+        scanCancelBtn,
+        { loading: "取消中...", success: "已请求取消", failed: "取消失败" },
+        cancelScanRangeJob,
+        refreshMessage
+      ).catch(console.error);
+    });
+    minuteRangeBtn.addEventListener("click", () => {
+      runButtonAction(
+        minuteRangeBtn,
+        { loading: "应用中...", success: "已应用", failed: "应用失败" },
+        applyMinuteRange,
+        minuteRangeMessage
+      ).catch(console.error);
+    });
+    projectSelect.addEventListener("change", () => {
+      syncProjectDropdownUi();
+      setProjectDropdownOpen(false);
+      saveSelectedProject(projectSelect.value);
+      syncLaunchFormToSelectedProject(projectSelect.value);
+      refreshAllSafe().catch(console.error);
+    });
+    saveConfigBtn.addEventListener("click", () => {
+      runButtonAction(
+        saveConfigBtn,
+        { loading: "保存中...", success: "已保存", failed: "保存失败" },
+        saveLaunchConfig,
+        lcMessage
+      ).catch(console.error);
+    });
+    deleteConfigBtn.addEventListener("click", () => {
+      runButtonAction(
+        deleteConfigBtn,
+        { loading: "删除中...", success: "已删除", failed: "删除失败" },
+        deleteLaunchConfig,
+        lcMessage
+      ).catch(console.error);
+    });
+    addWalletBtn.addEventListener("click", () => {
+      runButtonAction(
+        addWalletBtn,
+        { loading: "添加中...", success: "已添加", failed: "添加失败" },
+        addMonitoredWallet,
+        walletCfgMessage
+      ).catch(console.error);
+    });
+    walletInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        addWalletBtn.click();
+      }
+    });
+    applyDbBatchBtn.addEventListener("click", () => {
+      runButtonAction(
+        applyDbBatchBtn,
+        { loading: "应用中...", success: "已应用", failed: "应用失败" },
+        () => applyDbBatchSize(dbBatchInput.value),
+        dbBatchMessage
+      ).catch(console.error);
+    });
+    dbBatchInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        applyDbBatchBtn.click();
+      }
+    });
+    document.querySelectorAll(".db-batch-preset").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const val = btn.getAttribute("data-batch-size");
+        runButtonAction(
+          applyDbBatchBtn,
+          { loading: "应用中...", success: "已应用", failed: "应用失败" },
+          () => applyDbBatchSize(val),
+          dbBatchMessage
+        ).catch(console.error);
+      });
+    });
+    fastModeBtn.addEventListener("click", () => {
+      const targetMode = currentRefreshMode === "fast" ? "normal" : "fast";
+      setRefreshMode(targetMode);
+      refreshMessage.textContent =
+        targetMode === "fast" ? "极速模式已开启：0.5秒刷新" : "极速模式已关闭：1秒刷新";
+    });
+    superModeBtn.addEventListener("click", () => {
+      const targetMode = currentRefreshMode === "super" ? "fast" : "super";
+      setRefreshMode(targetMode);
+      refreshMessage.textContent =
+        targetMode === "super"
+          ? "超速模式已开启：0.25秒刷新（高耗时将自动降级）"
+          : "超速模式已关闭：已切回极速模式(0.5秒)";
+    });
+    window.addEventListener("resize", () => {
+      if (resizeRefreshTimer) {
+        clearTimeout(resizeRefreshTimer);
+      }
+      resizeRefreshTimer = setTimeout(() => {
+        refreshAllSafe().catch(console.error);
+      }, 200);
+    });
+
+    setRefreshMode(loadRefreshMode(), { persist: false });
+    boot();
+  </script>
+</body>
+</html>

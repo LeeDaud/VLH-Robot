@@ -1,0 +1,19 @@
+[Unit]
+Description=Virtuals-Launch-Hunter role %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vpulse
+Group=vpulse
+WorkingDirectory=/opt/vpulse
+ExecStart=/opt/vpulse/.venv/bin/python /opt/vpulse/virtuals_bot.py --config /opt/vpulse/config.json --role %i
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGINT
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
