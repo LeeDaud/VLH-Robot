@@ -180,6 +180,9 @@ class AppConfig:
     robot_stop_loss_ratio: Decimal
     robot_max_consecutive_losses: int
     robot_large_order_threshold_v: Decimal
+    robot_executor_webhook_url: Optional[str]
+    robot_executor_auth_token: Optional[str]
+    robot_executor_timeout_sec: int
     price_mode: str
     virtual_usdc_pair_addr: Optional[str]
     pool_factory_addrs: List[str]
@@ -306,6 +309,11 @@ def load_config(path: str) -> AppConfig:
     robot_stop_loss_ratio = Decimal(str(raw.get("ROBOT_STOP_LOSS_RATIO", "0.10")))
     robot_max_consecutive_losses = int(raw.get("ROBOT_MAX_CONSECUTIVE_LOSSES", 3))
     robot_large_order_threshold_v = Decimal(str(raw.get("ROBOT_LARGE_ORDER_THRESHOLD_V", "1")))
+    robot_executor_webhook_url_raw = str(raw.get("ROBOT_EXECUTOR_WEBHOOK_URL", "")).strip()
+    robot_executor_webhook_url = robot_executor_webhook_url_raw or None
+    robot_executor_auth_token_raw = str(raw.get("ROBOT_EXECUTOR_AUTH_TOKEN", "")).strip()
+    robot_executor_auth_token = robot_executor_auth_token_raw or None
+    robot_executor_timeout_sec = int(raw.get("ROBOT_EXECUTOR_TIMEOUT_SEC", 15))
 
     if robot_total_capital_v <= 0:
         raise ValueError("ROBOT_TOTAL_CAPITAL_V must be > 0")
@@ -324,6 +332,12 @@ def load_config(path: str) -> AppConfig:
         raise ValueError("ROBOT_MAX_CONSECUTIVE_LOSSES must be >= 1")
     if robot_large_order_threshold_v <= 0:
         raise ValueError("ROBOT_LARGE_ORDER_THRESHOLD_V must be > 0")
+    if robot_executor_timeout_sec < 3 or robot_executor_timeout_sec > 120:
+        raise ValueError("ROBOT_EXECUTOR_TIMEOUT_SEC must be in [3, 120]")
+    if robot_mode == "live" and not robot_executor_webhook_url:
+        raise ValueError(
+            "ROBOT_MODE=live requires ROBOT_EXECUTOR_WEBHOOK_URL for execution"
+        )
 
     pool_factory_raw = raw.get("POOL_FACTORY_ADDRS", [])
     if isinstance(pool_factory_raw, str):
@@ -384,6 +398,9 @@ def load_config(path: str) -> AppConfig:
         robot_stop_loss_ratio=robot_stop_loss_ratio,
         robot_max_consecutive_losses=robot_max_consecutive_losses,
         robot_large_order_threshold_v=robot_large_order_threshold_v,
+        robot_executor_webhook_url=robot_executor_webhook_url,
+        robot_executor_auth_token=robot_executor_auth_token,
+        robot_executor_timeout_sec=robot_executor_timeout_sec,
         price_mode=price_mode,
         virtual_usdc_pair_addr=virtual_usdc_pair_addr,
         pool_factory_addrs=pool_factory_addrs,
@@ -642,6 +659,7 @@ class Storage:
                 minute_fee_v TEXT NOT NULL,
                 minute_tax_v TEXT NOT NULL,
                 minute_buy_count INTEGER NOT NULL,
+                minute_sell_count INTEGER NOT NULL DEFAULT 0,
                 minute_unique_buyers INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY(project, minute_key)
@@ -739,10 +757,18 @@ class Storage:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 token_address TEXT NOT NULL,
                 tx_count_30s INTEGER NOT NULL,
+                tx_count_60s INTEGER NOT NULL DEFAULT 0,
+                tx_count_3m INTEGER NOT NULL DEFAULT 0,
+                buy_count_60s INTEGER NOT NULL DEFAULT 0,
+                sell_count_60s INTEGER NOT NULL DEFAULT 0,
                 buy_sell_ratio TEXT NOT NULL,
                 volume_quote_60s TEXT NOT NULL,
+                volume_quote_3m TEXT NOT NULL DEFAULT '0',
                 unique_buyers INTEGER NOT NULL,
+                unique_buyers_growth TEXT NOT NULL DEFAULT '0',
                 large_order_ratio TEXT NOT NULL,
+                abnormal_sell_pressure TEXT NOT NULL DEFAULT '0',
+                breakeven_gap_ratio TEXT NOT NULL DEFAULT '0',
                 timestamp INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_feature_snapshots_token_time
@@ -771,6 +797,9 @@ class Storage:
                 tx_hash TEXT,
                 pnl_v TEXT,
                 mode TEXT NOT NULL,
+                exec_status TEXT NOT NULL DEFAULT 'simulated',
+                exec_error TEXT,
+                updated_at INTEGER NOT NULL DEFAULT 0,
                 timestamp INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_robot_trades_token_time
@@ -795,6 +824,52 @@ class Storage:
                 updated_at INTEGER NOT NULL
             );
             """
+        )
+        self.conn.commit()
+        self._ensure_schema_columns()
+
+    def _ensure_column_exists(self, table: str, column: str, decl: str) -> None:
+        info = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        existing = {str(r["name"]).lower() for r in info}
+        if str(column).lower() in existing:
+            return
+        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+    def _ensure_schema_columns(self) -> None:
+        # Backward-compatible online migrations for older databases.
+        self._ensure_column_exists(
+            "minute_agg", "minute_sell_count", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "tx_count_60s", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "tx_count_3m", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "buy_count_60s", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "sell_count_60s", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "volume_quote_3m", "TEXT NOT NULL DEFAULT '0'"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "unique_buyers_growth", "TEXT NOT NULL DEFAULT '0'"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "abnormal_sell_pressure", "TEXT NOT NULL DEFAULT '0'"
+        )
+        self._ensure_column_exists(
+            "feature_snapshots", "breakeven_gap_ratio", "TEXT NOT NULL DEFAULT '0'"
+        )
+        self._ensure_column_exists(
+            "robot_trades", "exec_status", "TEXT NOT NULL DEFAULT 'simulated'"
+        )
+        self._ensure_column_exists("robot_trades", "exec_error", "TEXT")
+        self._ensure_column_exists(
+            "robot_trades", "updated_at", "INTEGER NOT NULL DEFAULT 0"
         )
         self.conn.commit()
 
@@ -1164,14 +1239,19 @@ class Storage:
                         "fee": Decimal(0),
                         "tax": Decimal(0),
                         "buy_count": 0,
+                        "sell_count": 0,
                         "unique_inc": 0,
                     },
                 )
+                is_buy_side = e["spent_v_est"] > 0
                 md["spent"] += e["spent_v_est"]
                 md["fee"] += e["fee_v"]
                 md["tax"] += e["tax_v"]
-                md["buy_count"] += 1
-                minute_buyers.add((e["project"], mkey[1], e["buyer"]))
+                if is_buy_side:
+                    md["buy_count"] += 1
+                    minute_buyers.add((e["project"], mkey[1], e["buyer"]))
+                else:
+                    md["sell_count"] += 1
 
                 lkey = (e["project"], e["buyer"])
                 ld = leaderboard_deltas.setdefault(
@@ -1274,7 +1354,13 @@ class Storage:
             for (project, minute_key), d in minute_deltas.items():
                 row = cur.execute(
                     """
-                    SELECT minute_spent_v, minute_fee_v, minute_tax_v, minute_buy_count, minute_unique_buyers
+                    SELECT
+                        minute_spent_v,
+                        minute_fee_v,
+                        minute_tax_v,
+                        minute_buy_count,
+                        minute_sell_count,
+                        minute_unique_buyers
                     FROM minute_agg
                     WHERE project = ? AND minute_key = ?
                     """,
@@ -1284,18 +1370,20 @@ class Storage:
                 old_fee = Decimal(row["minute_fee_v"]) if row else Decimal(0)
                 old_tax = Decimal(row["minute_tax_v"]) if row else Decimal(0)
                 old_count = int(row["minute_buy_count"]) if row else 0
+                old_sell_count = int(row["minute_sell_count"]) if row else 0
                 old_unique = int(row["minute_unique_buyers"]) if row else 0
                 cur.execute(
                     """
                     INSERT INTO minute_agg(
                         project, minute_key, minute_spent_v, minute_fee_v, minute_tax_v,
-                        minute_buy_count, minute_unique_buyers, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        minute_buy_count, minute_sell_count, minute_unique_buyers, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(project, minute_key) DO UPDATE SET
                         minute_spent_v = excluded.minute_spent_v,
                         minute_fee_v = excluded.minute_fee_v,
                         minute_tax_v = excluded.minute_tax_v,
                         minute_buy_count = excluded.minute_buy_count,
+                        minute_sell_count = excluded.minute_sell_count,
                         minute_unique_buyers = excluded.minute_unique_buyers,
                         updated_at = excluded.updated_at
                     """,
@@ -1306,6 +1394,7 @@ class Storage:
                         decimal_to_str(old_fee + d["fee"], 18),
                         decimal_to_str(old_tax + d["tax"], 18),
                         old_count + d["buy_count"],
+                        old_sell_count + d["sell_count"],
                         old_unique + d["unique_inc"],
                         int(time.time()),
                     ),
@@ -1842,26 +1931,44 @@ class Storage:
         *,
         token_address: str,
         tx_count_30s: int,
+        tx_count_60s: int,
+        tx_count_3m: int,
+        buy_count_60s: int,
+        sell_count_60s: int,
         buy_sell_ratio: Decimal,
         volume_quote_60s: Decimal,
+        volume_quote_3m: Decimal,
         unique_buyers: int,
+        unique_buyers_growth: Decimal,
         large_order_ratio: Decimal,
+        abnormal_sell_pressure: Decimal,
+        breakeven_gap_ratio: Decimal,
         timestamp: int,
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO feature_snapshots(
-                token_address, tx_count_30s, buy_sell_ratio, volume_quote_60s,
-                unique_buyers, large_order_ratio, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                token_address, tx_count_30s, tx_count_60s, tx_count_3m,
+                buy_count_60s, sell_count_60s, buy_sell_ratio, volume_quote_60s,
+                volume_quote_3m, unique_buyers, unique_buyers_growth, large_order_ratio,
+                abnormal_sell_pressure, breakeven_gap_ratio, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 normalize_address(token_address),
                 int(tx_count_30s),
+                int(tx_count_60s),
+                int(tx_count_3m),
+                int(buy_count_60s),
+                int(sell_count_60s),
                 decimal_to_str(buy_sell_ratio, 18),
                 decimal_to_str(volume_quote_60s, 18),
+                decimal_to_str(volume_quote_3m, 18),
                 int(unique_buyers),
+                decimal_to_str(unique_buyers_growth, 18),
                 decimal_to_str(large_order_ratio, 18),
+                decimal_to_str(abnormal_sell_pressure, 18),
+                decimal_to_str(breakeven_gap_ratio, 18),
                 int(timestamp),
             ),
         )
@@ -1944,12 +2051,16 @@ class Storage:
         timestamp: int,
         tx_hash: Optional[str] = None,
         pnl_v: Optional[Decimal] = None,
+        exec_status: str = "simulated",
+        exec_error: Optional[str] = None,
     ) -> int:
+        now_ts = int(time.time())
         cur = self.conn.execute(
             """
             INSERT INTO robot_trades(
-                token_address, action, price, amount, reason, tx_hash, pnl_v, mode, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                token_address, action, price, amount, reason, tx_hash, pnl_v, mode,
+                exec_status, exec_error, updated_at, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 normalize_address(token_address),
@@ -1960,11 +2071,43 @@ class Storage:
                 str(tx_hash).strip() if tx_hash else None,
                 decimal_to_str(pnl_v, 18) if pnl_v is not None else None,
                 str(mode).strip().lower(),
+                str(exec_status).strip().lower() or "simulated",
+                str(exec_error).strip() if exec_error else None,
+                now_ts,
                 int(timestamp),
             ),
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def update_robot_trade_execution(
+        self,
+        trade_id: int,
+        *,
+        exec_status: str,
+        tx_hash: Optional[str] = None,
+        exec_error: Optional[str] = None,
+    ) -> bool:
+        cur = self.conn.execute(
+            """
+            UPDATE robot_trades
+            SET
+                exec_status = ?,
+                tx_hash = COALESCE(?, tx_hash),
+                exec_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                str(exec_status).strip().lower(),
+                str(tx_hash).strip() if tx_hash else None,
+                str(exec_error).strip() if exec_error else None,
+                int(time.time()),
+                int(trade_id),
+            ),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def query_robot_trades(
         self, token_address: Optional[str] = None, limit_n: int = 200
@@ -2564,7 +2707,16 @@ class VirtualsBot:
             self.http_rpc,
             is_paused=lambda: self.runtime_paused,
         )
+        self.robot_executor_webhook_url = (
+            str(cfg.robot_executor_webhook_url).strip() if cfg.robot_executor_webhook_url else None
+        )
+        self.robot_executor_auth_token = (
+            str(cfg.robot_executor_auth_token).strip() if cfg.robot_executor_auth_token else None
+        )
+        self.robot_executor_timeout_sec = int(cfg.robot_executor_timeout_sec)
+        self.robot_live_execution_ready = bool(self.robot_executor_webhook_url)
         self.queue: asyncio.Queue[Tuple[str, int, bool]] = asyncio.Queue(maxsize=10000)
+        self.robot_execution_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=5000)
         self.pending_txs: Set[str] = set()
         self.stop_event = asyncio.Event()
         self.tasks: List[asyncio.Task] = []
@@ -2591,6 +2743,9 @@ class VirtualsBot:
             "last_flush_at": 0,
             "started_at": int(time.time()),
             "role": role,
+            "robot_exec_queued": 0,
+            "robot_exec_submitted": 0,
+            "robot_exec_failed": 0,
         }
         raw_losses = self.storage.get_robot_state("consecutive_losses")
         try:
@@ -2600,6 +2755,9 @@ class VirtualsBot:
         runtime_robot_mode = (self.storage.get_robot_state("runtime_robot_mode") or "").strip().lower()
         if runtime_robot_mode in {"observe", "paper", "live"}:
             self.cfg.robot_mode = runtime_robot_mode
+            if runtime_robot_mode == "live" and not self.robot_live_execution_ready:
+                self.cfg.robot_mode = "observe"
+                self.storage.set_robot_state("runtime_robot_mode", "observe")
         else:
             self.storage.set_robot_state("runtime_robot_mode", self.cfg.robot_mode)
         self.robot_paused_due_risk = parse_bool_like(self.storage.get_robot_state("risk_paused"))
@@ -2711,6 +2869,22 @@ class VirtualsBot:
             ),
             "runtimeUiHeartbeatTimeoutSec": int(self.runtime_ui_heartbeat_timeout_sec),
             "updatedAt": int(self.runtime_pause_updated_at),
+        }
+
+    def robot_execution_payload(self) -> Dict[str, Any]:
+        queued = int(self.stats.get("robot_exec_queued", 0))
+        submitted = int(self.stats.get("robot_exec_submitted", 0))
+        failed = int(self.stats.get("robot_exec_failed", 0))
+        return {
+            "mode": str(self.cfg.robot_mode),
+            "liveExecutionReady": bool(self._is_robot_live_ready()),
+            "executorType": "webhook" if self.robot_executor_webhook_url else "none",
+            "executorConfigured": bool(self.robot_executor_webhook_url),
+            "executorTimeoutSec": int(self.robot_executor_timeout_sec),
+            "queueSize": int(self.robot_execution_queue.qsize()),
+            "queued": queued,
+            "submitted": submitted,
+            "failed": failed,
         }
 
     async def wait_until_resumed(self) -> bool:
@@ -2825,8 +2999,16 @@ class VirtualsBot:
         if self.robot_consecutive_losses >= self.cfg.robot_max_consecutive_losses:
             self._set_robot_risk_pause(True)
 
+    def _is_robot_live_ready(self) -> bool:
+        return bool(self.robot_live_execution_ready and self.robot_executor_webhook_url)
+
     def _is_robot_mode_active(self) -> bool:
-        return self.cfg.robot_mode in {"paper", "live"}
+        mode = str(self.cfg.robot_mode).strip().lower()
+        if mode == "paper":
+            return True
+        if mode == "live":
+            return self._is_robot_live_ready()
+        return False
 
     def _is_robot_entry_allowed(self) -> bool:
         return self._is_robot_mode_active() and (not self.robot_paused_due_risk)
@@ -2863,6 +3045,7 @@ class VirtualsBot:
 
         win_30 = [x for x in rows if int(x["block_timestamp"]) >= now_ts - 30]
         win_60 = [x for x in rows if int(x["block_timestamp"]) >= now_ts - 60]
+        win_180 = [x for x in rows if int(x["block_timestamp"]) >= now_ts - 180]
         win_prev_60 = [
             x
             for x in rows
@@ -2871,15 +3054,34 @@ class VirtualsBot:
 
         tx_count_30s = len(win_30)
         tx_count_60s = len(win_60)
+        tx_count_3m = len(win_180)
         buy_count_30s = sum(1 for x in win_30 if self._to_decimal(x.get("spent_v_est")) > 0)
         sell_count_30s = sum(1 for x in win_30 if self._to_decimal(x.get("spent_v_est")) <= 0)
+        buy_count_60s = sum(1 for x in win_60 if self._to_decimal(x.get("spent_v_est")) > 0)
+        sell_count_60s = sum(1 for x in win_60 if self._to_decimal(x.get("spent_v_est")) <= 0)
         buy_sell_ratio = self._safe_div(
             Decimal(buy_count_30s + 1), Decimal(sell_count_30s + 1)
         )
 
         volume_60s = sum((self._to_decimal(x.get("spent_v_est")) for x in win_60), Decimal(0))
+        volume_3m = sum((self._to_decimal(x.get("spent_v_est")) for x in win_180), Decimal(0))
         volume_prev_60 = sum(
             (self._to_decimal(x.get("spent_v_est")) for x in win_prev_60), Decimal(0)
+        )
+        buy_volume_60 = sum(
+            (self._to_decimal(x.get("spent_v_est")) for x in win_60 if self._to_decimal(x.get("spent_v_est")) > 0),
+            Decimal(0),
+        )
+        sell_volume_60 = sum(
+            (
+                abs(self._to_decimal(x.get("spent_v_est")))
+                for x in win_60
+                if self._to_decimal(x.get("spent_v_est")) < 0
+            ),
+            Decimal(0),
+        )
+        abnormal_sell_pressure = self._safe_div(
+            sell_volume_60, (buy_volume_60 + sell_volume_60 + Decimal("0.00000001"))
         )
         unique_buyers = len({str(x.get("buyer", "")).lower() for x in win_60 if x.get("buyer")})
         unique_prev_60 = len(
@@ -2934,13 +3136,18 @@ class VirtualsBot:
             "timestamp": int(now_ts),
             "tx_count_30s": tx_count_30s,
             "tx_count_60s": tx_count_60s,
+            "tx_count_3m": tx_count_3m,
+            "buy_count_60s": buy_count_60s,
+            "sell_count_60s": sell_count_60s,
             "buy_sell_ratio": buy_sell_ratio,
             "volume_60s": volume_60s,
+            "volume_3m": volume_3m,
             "volume_prev_60": volume_prev_60,
             "unique_buyers": unique_buyers,
             "unique_buyers_growth": unique_buyers_growth,
             "large_order_ratio": large_order_ratio,
             "anomaly_rate_60": anomaly_rate_60,
+            "abnormal_sell_pressure": abnormal_sell_pressure,
             "breakeven_gap_ratio": breakeven_gap_ratio,
             "price_now": price_now,
             "price_prev_60": price_prev_60,
@@ -2955,6 +3162,7 @@ class VirtualsBot:
         unique_growth = self._to_decimal(ctx["unique_buyers_growth"])
         large_order_ratio = self._to_decimal(ctx["large_order_ratio"])
         anomaly_rate_60 = self._to_decimal(ctx["anomaly_rate_60"])
+        abnormal_sell_pressure = self._to_decimal(ctx["abnormal_sell_pressure"])
         gap_ratio = self._to_decimal(ctx["breakeven_gap_ratio"])
         price_now = self._to_decimal(ctx["price_now"])
         price_prev_60 = self._to_decimal(ctx["price_prev_60"])
@@ -2972,6 +3180,7 @@ class VirtualsBot:
             + (growth_capped + Decimal(1)) * Decimal("15")
             + large_order_ratio * Decimal(30)
             + (Decimal(10) if volume_60s > 0 else Decimal(0))
+            - abnormal_sell_pressure * Decimal(20)
         )
 
         phase_score = Decimal(20)
@@ -2989,6 +3198,7 @@ class VirtualsBot:
             anomaly_rate_60 * Decimal(55)
             + max(Decimal(0), -unique_growth) * Decimal(25)
             + min(Decimal(20), gap_ratio * Decimal(40))
+            + abnormal_sell_pressure * Decimal(45)
         )
         if price_now <= 0:
             risk_score += Decimal(20)
@@ -3029,6 +3239,7 @@ class VirtualsBot:
     def _record_robot_trade(
         self,
         *,
+        project: str,
         token_address: str,
         action: str,
         price: Decimal,
@@ -3036,12 +3247,21 @@ class VirtualsBot:
         reason: str,
         timestamp: int,
         pnl_v: Optional[Decimal] = None,
-    ) -> None:
+    ) -> int:
         mode = self.cfg.robot_mode
         tx_hash = None
-        if mode in {"paper", "live"}:
-            tx_hash = f"{mode}-sim-{int(timestamp)}-{token_address[-6:]}"
-        self.storage.insert_robot_trade(
+        exec_status = "skipped"
+        exec_error = None
+        if mode == "paper":
+            tx_hash = f"paper-sim-{int(timestamp)}-{token_address[-6:]}"
+            exec_status = "simulated"
+        elif mode == "live":
+            if self._is_robot_live_ready():
+                exec_status = "pending"
+            else:
+                exec_status = "failed"
+                exec_error = "live executor not configured"
+        trade_id = self.storage.insert_robot_trade(
             token_address=token_address,
             action=action,
             price=price,
@@ -3050,8 +3270,105 @@ class VirtualsBot:
             tx_hash=tx_hash,
             pnl_v=pnl_v,
             mode=mode,
+            exec_status=exec_status,
+            exec_error=exec_error,
             timestamp=timestamp,
         )
+        if mode == "live" and exec_status == "pending":
+            intent = {
+                "trade_id": int(trade_id),
+                "project": str(project).strip(),
+                "token_address": normalize_address(token_address),
+                "action": str(action).strip().lower(),
+                "price": decimal_to_str(price, 18),
+                "amount": decimal_to_str(amount, 18),
+                "reason": str(reason),
+                "mode": str(mode).strip().lower(),
+                "timestamp": int(timestamp),
+                "pnl_v": decimal_to_str(pnl_v, 18) if pnl_v is not None else None,
+                "chain_id": int(self.cfg.chain_id),
+            }
+            try:
+                self.robot_execution_queue.put_nowait(intent)
+                self.stats["robot_exec_queued"] = int(self.stats.get("robot_exec_queued", 0)) + 1
+            except asyncio.QueueFull:
+                self.storage.update_robot_trade_execution(
+                    int(trade_id),
+                    exec_status="failed",
+                    exec_error="execution queue full",
+                )
+                self.stats["robot_exec_failed"] = int(self.stats.get("robot_exec_failed", 0)) + 1
+        return int(trade_id)
+
+    async def _execute_robot_trade_via_webhook(self, intent: Dict[str, Any]) -> str:
+        if not self.robot_executor_webhook_url:
+            raise RuntimeError("robot executor webhook is not configured")
+        timeout = aiohttp.ClientTimeout(total=self.robot_executor_timeout_sec)
+        headers = {"Content-Type": "application/json"}
+        if self.robot_executor_auth_token:
+            headers["Authorization"] = f"Bearer {self.robot_executor_auth_token}"
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.robot_executor_webhook_url,
+                headers=headers,
+                json=intent,
+            ) as resp:
+                raw_text = await resp.text()
+                payload: Dict[str, Any] = {}
+                with contextlib.suppress(Exception):
+                    payload = json.loads(raw_text) if raw_text else {}
+                if resp.status >= 400:
+                    err_msg = ""
+                    if isinstance(payload, dict):
+                        err_msg = str(payload.get("error") or payload.get("message") or "").strip()
+                    err_msg = err_msg or raw_text or f"HTTP {resp.status}"
+                    raise RuntimeError(f"executor webhook failed: {err_msg}")
+                tx_hash = ""
+                if isinstance(payload, dict):
+                    tx_hash = str(
+                        payload.get("tx_hash")
+                        or payload.get("txHash")
+                        or payload.get("hash")
+                        or ""
+                    ).strip()
+                if tx_hash:
+                    return tx_hash
+                if isinstance(payload, dict) and bool(payload.get("accepted")):
+                    return f"webhook-accepted-{int(intent.get('trade_id', 0))}"
+                raise RuntimeError("executor webhook did not return tx hash")
+
+    async def robot_execution_loop(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                intent = await asyncio.wait_for(self.robot_execution_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                raise
+
+            trade_id = int(intent.get("trade_id", 0) or 0)
+            if trade_id <= 0:
+                self.robot_execution_queue.task_done()
+                continue
+            try:
+                tx_hash = await self._execute_robot_trade_via_webhook(intent)
+                self.storage.update_robot_trade_execution(
+                    trade_id,
+                    exec_status="submitted",
+                    tx_hash=tx_hash,
+                    exec_error=None,
+                )
+                self.stats["robot_exec_submitted"] = int(self.stats.get("robot_exec_submitted", 0)) + 1
+            except Exception as e:
+                self.storage.update_robot_trade_execution(
+                    trade_id,
+                    exec_status="failed",
+                    exec_error=f"{type(e).__name__}: {e}",
+                )
+                self._set_robot_risk_pause(True)
+                self.stats["robot_exec_failed"] = int(self.stats.get("robot_exec_failed", 0)) + 1
+            finally:
+                self.robot_execution_queue.task_done()
 
     def _evaluate_robot_strategy(self, ctx: Dict[str, Any], scores: Dict[str, Decimal]) -> None:
         project = str(ctx["project"])
@@ -3075,6 +3392,7 @@ class VirtualsBot:
                 sell_value = token_amount * price_now
                 pnl_v = sell_value - position_value_v
                 self._record_robot_trade(
+                    project=project,
                     token_address=token_address,
                     action="sell",
                     price=price_now,
@@ -3169,6 +3487,7 @@ class VirtualsBot:
                 updated_at=now_ts,
             )
             self._record_robot_trade(
+                project=project,
                 token_address=token_address,
                 action="buy",
                 price=price_now,
@@ -3211,10 +3530,18 @@ class VirtualsBot:
             self.storage.insert_feature_snapshot(
                 token_address=token_address,
                 tx_count_30s=int(ctx["tx_count_30s"]),
+                tx_count_60s=int(ctx["tx_count_60s"]),
+                tx_count_3m=int(ctx["tx_count_3m"]),
+                buy_count_60s=int(ctx["buy_count_60s"]),
+                sell_count_60s=int(ctx["sell_count_60s"]),
                 buy_sell_ratio=self._to_decimal(ctx["buy_sell_ratio"]),
                 volume_quote_60s=self._to_decimal(ctx["volume_60s"]),
+                volume_quote_3m=self._to_decimal(ctx["volume_3m"]),
                 unique_buyers=int(ctx["unique_buyers"]),
+                unique_buyers_growth=self._to_decimal(ctx["unique_buyers_growth"]),
                 large_order_ratio=self._to_decimal(ctx["large_order_ratio"]),
+                abnormal_sell_pressure=self._to_decimal(ctx["abnormal_sell_pressure"]),
+                breakeven_gap_ratio=self._to_decimal(ctx["breakeven_gap_ratio"]),
                 timestamp=now_ts,
             )
 
@@ -4347,6 +4674,7 @@ class VirtualsBot:
         if runtime_paused:
             stats["ws_connected"] = False
         runtime_data = self.runtime_pause_payload()
+        robot_exec_data = self.robot_execution_payload()
 
         return web.json_response(
             {
@@ -4369,6 +4697,7 @@ class VirtualsBot:
                 "robotMode": self.cfg.robot_mode,
                 "robotRiskPaused": bool(self.robot_paused_due_risk),
                 "robotConsecutiveLosses": int(self.robot_consecutive_losses),
+                "robotExecution": robot_exec_data,
             }
         )
 
@@ -4708,6 +5037,7 @@ class VirtualsBot:
                     ),
                     "pool_factory_addrs": self.cfg.pool_factory_addrs,
                     "pool_discovery_quote_token_addrs": self.cfg.pool_discovery_quote_token_addrs,
+                    "execution": self.robot_execution_payload(),
                 },
             }
         )
@@ -5020,6 +5350,7 @@ class VirtualsBot:
             {
                 "ok": True,
                 "mode": self.cfg.robot_mode,
+                "executionReady": bool(self._is_robot_live_ready()),
                 "riskPaused": bool(self.robot_paused_due_risk),
                 "consecutiveLosses": int(self.robot_consecutive_losses),
                 "maxConsecutiveLosses": int(self.cfg.robot_max_consecutive_losses),
@@ -5036,6 +5367,16 @@ class VirtualsBot:
         mode = mode_alias.get(mode_raw, mode_raw)
         if mode not in {"observe", "paper", "live"}:
             return web.json_response({"error": "mode must be one of: observe, paper, live"}, status=400)
+        if mode == "live" and (not self._is_robot_live_ready()):
+            return web.json_response(
+                {
+                    "error": (
+                        "live mode requires execution webhook. "
+                        "set ROBOT_EXECUTOR_WEBHOOK_URL first"
+                    )
+                },
+                status=400,
+            )
         self.cfg.robot_mode = mode
         self.storage.set_robot_state("runtime_robot_mode", mode)
         return await self.robot_mode_get_handler(request)
@@ -5050,6 +5391,9 @@ class VirtualsBot:
                 "consecutiveLosses": int(self.robot_consecutive_losses),
             }
         )
+
+    async def robot_execution_status_handler(self, request: web.Request) -> web.Response:
+        return web.json_response({"ok": True, **self.robot_execution_payload()})
 
     async def robot_summary_handler(self, request: web.Request) -> web.Response:
         project = request.query.get("project")
@@ -5070,6 +5414,7 @@ class VirtualsBot:
             {
                 "mode": self.cfg.robot_mode,
                 "entryEnabled": bool(self._is_robot_entry_allowed()),
+                "executionReady": bool(self._is_robot_live_ready()),
                 "runtimePaused": bool(runtime_data["runtimePaused"]),
                 "riskPaused": bool(self.robot_paused_due_risk),
                 "consecutiveLosses": int(self.robot_consecutive_losses),
@@ -5080,6 +5425,7 @@ class VirtualsBot:
                 "unrealizedPnlV": decimal_to_str(unrealized_pnl_v, 18),
                 "maxProjectPositionRatio": decimal_to_str(self.cfg.robot_max_project_position_ratio, 6),
                 "stopLossRatio": decimal_to_str(self.cfg.robot_stop_loss_ratio, 6),
+                "execution": self.robot_execution_payload(),
                 "recentTrades": recent_trades,
             }
         )
@@ -5153,6 +5499,7 @@ class VirtualsBot:
         app.router.add_get("/robot/summary", self.robot_summary_handler)
         app.router.add_get("/robot/mode", self.robot_mode_get_handler)
         app.router.add_post("/robot/mode", self.robot_mode_set_handler)
+        app.router.add_get("/robot/execution", self.robot_execution_status_handler)
         app.router.add_post("/robot/resume", self.robot_resume_handler)
         app.router.add_get("/robot/positions", self.robot_positions_handler)
         app.router.add_get("/robot/trades", self.robot_trades_handler)
@@ -5175,6 +5522,8 @@ class VirtualsBot:
             self.tasks.append(asyncio.create_task(self.bus_writer_loop()))
         elif self.is_writer_role:
             self.tasks.append(asyncio.create_task(self.flush_loop()))
+        if self.is_writer_role:
+            self.tasks.append(asyncio.create_task(self.robot_execution_loop()))
         if self.is_realtime_role:
             self.tasks.append(asyncio.create_task(self.ws_loop()))
         if self.is_backfill_role:

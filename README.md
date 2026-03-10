@@ -11,6 +11,7 @@ Virtuals-Launch-Hunter 是一个面向 Base 链的实时监控与回扫分析工
 - Pool Discovery：支持 `PairCreated` 与 `getPair` 补查发现池子并落库。
 - Feature/Scoring：新增 30s/60s/3m 窗口特征快照与入场评分。
 - Robot Engine：支持 `observe/paper/live` 三种模式、三段式入场和风控暂停。
+  - `live` 模式通过执行器 Webhook 自动下单（需配置 `ROBOT_EXECUTOR_WEBHOOK_URL`）。
 - 统计面板：
   - 分钟消耗 SpentV
   - 大户榜
@@ -105,9 +106,23 @@ python virtuals_bot.py --config .\config.json --role backfill
 - `GET /robot/positions`：当前机器人仓位
 - `GET /robot/mode`：机器人模式
 - `POST /robot/mode`：切换机器人模式
+- `GET /robot/execution`：机器人执行引擎状态
 - `POST /robot/resume`：清除风险暂停
 - `POST /scan-range`：发起区间回扫
 - `POST /scan-jobs/{job_id}/cancel`：取消回扫任务
+
+### Live 执行器 Webhook 约定
+- 配置项：
+  - `ROBOT_EXECUTOR_WEBHOOK_URL`
+  - `ROBOT_EXECUTOR_AUTH_TOKEN`（可选，Bearer）
+  - `ROBOT_EXECUTOR_TIMEOUT_SEC`（默认 15）
+- 请求方法：`POST`
+- 请求体字段：
+  - `trade_id`、`project`、`token_address`、`action`、`price`、`amount`、`reason`、`mode`、`timestamp`、`chain_id`
+- 成功返回（任选其一）：
+  - `{ "tx_hash": "0x..." }`
+  - `{ "txHash": "0x..." }`
+  - `{ "accepted": true }`（无 tx hash 时将记录为 webhook accepted）
 
 ## 常见问题
 - 端口占用（10048）：说明 8080 已被占用，停掉旧进程或改 `API_PORT`。

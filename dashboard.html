@@ -1229,6 +1229,7 @@
               <th>动作</th>
               <th>代币地址</th>
               <th>模式</th>
+              <th>执行状态</th>
               <th>金额V</th>
               <th>价格V</th>
               <th>PnL(V)</th>
@@ -3144,6 +3145,7 @@
     function renderRobotSummary(summary) {
       const mode = String(summary?.mode || "observe").toLowerCase();
       const entryEnabled = Boolean(summary?.entryEnabled);
+      const executionReady = Boolean(summary?.executionReady ?? true);
       const runtimePausedNow = Boolean(summary?.runtimePaused);
       const riskPaused = Boolean(summary?.riskPaused);
       const losses = Number(summary?.consecutiveLosses || 0);
@@ -3151,9 +3153,12 @@
 
       setRobotModeButtons(mode);
       robotModeValue.textContent = robotModeLabel(mode);
+      const entryOffReason = runtimePausedNow
+        ? "运行暂停"
+        : (mode === "live" && !executionReady ? "执行未就绪" : "入场关闭");
       robotEntryValue.innerHTML = entryEnabled
         ? `<span class="status ok">允许入场</span>`
-        : `<span class="status bad">${runtimePausedNow ? "运行暂停" : "入场关闭"}</span>`;
+        : `<span class="status bad">${entryOffReason}</span>`;
 
       const riskDesc = riskPaused
         ? `已暂停 (${losses}/${maxLosses})`
@@ -3270,11 +3275,25 @@
           : action === "sell"
             ? `<span class="status bad">SELL</span>`
             : (r.action || "-");
+        const execStatus = String(r.exec_status || "").toLowerCase();
+        const execBadge = execStatus === "submitted"
+          ? `<span class="status ok">已提交</span>`
+          : execStatus === "pending"
+            ? `<span class="status">待执行</span>`
+            : execStatus === "failed"
+              ? `<span class="status bad">失败</span>`
+              : execStatus === "simulated"
+                ? `<span class="status mid">模拟</span>`
+                : `<span class="status">${execStatus || "-"}</span>`;
+        const execTip = r.tx_hash
+          ? `tx: ${r.tx_hash}`
+          : (r.exec_error ? String(r.exec_error) : execStatus || "-");
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${actionBadge}</td>
           <td>${addrWithCopyHtml(r.token_address)}</td>
           <td>${robotModeLabel(r.mode)}</td>
+          <td>${tipSpanHtml(execBadge, execTip)}</td>
           <td>${numWithExactTitle(fmtNum(r.amount, 6), r.amount)}</td>
           <td>${numWithExactTitle(fmtNum(r.price, 8), r.price)}</td>
           <td>${numWithExactTitle(fmtNum(r.pnl_v, 6), r.pnl_v)}</td>
@@ -3285,7 +3304,7 @@
       });
       if (!(rows || []).length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="8" class="muted">暂无机器人交易记录。</td>`;
+        tr.innerHTML = `<td colspan="9" class="muted">暂无机器人交易记录。</td>`;
         robotTradeBody.appendChild(tr);
       }
     }
@@ -3421,7 +3440,10 @@
 
       const minuteRows = minutes.items || [];
       drawMinuteChart(minuteRows);
+      const minuteBuyCount = minuteRows.reduce((s, x) => s + Number(x?.minute_buy_count || 0), 0);
+      const minuteSellCount = minuteRows.reduce((s, x) => s + Number(x?.minute_sell_count || 0), 0);
       minuteMeta.textContent = `项目=${project || "-"} | 点数=${minuteRows.length} | 从=${fmtTs(from)} | 到=${fmtTs(to)}`;
+      minuteMeta.textContent += ` | 买笔=${fmtNum(minuteBuyCount, 0)} | 卖笔=${fmtNum(minuteSellCount, 0)}`;
 
       renderWalletTable(wallets.items || []);
       renderLeaderTable(leader.items || []);
