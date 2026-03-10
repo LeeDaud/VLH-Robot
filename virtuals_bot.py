@@ -1708,7 +1708,7 @@ class Storage:
                 """
                 SELECT *
                 FROM token_pools
-                ORDER BY updated_at DESC
+                ORDER BY is_primary DESC, updated_at DESC
                 LIMIT ?
                 """,
                 (limit_n,),
@@ -1728,6 +1728,74 @@ class Storage:
             (token_address,),
         ).fetchone()
         return dict(row) if row else None
+
+    def get_event_signals_for_token_pools(
+        self, token_pool_pairs: List[Tuple[str, str]]
+    ) -> Tuple[Dict[Tuple[str, str], Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+        unique_pairs: Set[Tuple[str, str]] = set()
+        for token_addr, pool_addr in token_pool_pairs:
+            with contextlib.suppress(Exception):
+                unique_pairs.add(
+                    (normalize_address(str(token_addr)), normalize_address(str(pool_addr)))
+                )
+        if not unique_pairs:
+            return {}, {}
+
+        token_addrs = sorted({x[0] for x in unique_pairs})
+        placeholders = ",".join(["?"] * len(token_addrs))
+
+        token_rows = self.conn.execute(
+            f"""
+            SELECT
+                token_addr,
+                COUNT(1) AS event_count,
+                MAX(block_timestamp) AS latest_ts,
+                GROUP_CONCAT(DISTINCT project) AS projects_csv
+            FROM events
+            WHERE token_addr IN ({placeholders})
+            GROUP BY token_addr
+            """,
+            token_addrs,
+        ).fetchall()
+        pair_rows = self.conn.execute(
+            f"""
+            SELECT
+                token_addr,
+                internal_pool,
+                COUNT(1) AS event_count,
+                MAX(block_timestamp) AS latest_ts,
+                GROUP_CONCAT(DISTINCT project) AS projects_csv
+            FROM events
+            WHERE token_addr IN ({placeholders})
+            GROUP BY token_addr, internal_pool
+            """,
+            token_addrs,
+        ).fetchall()
+
+        token_map: Dict[str, Dict[str, Any]] = {}
+        for row in token_rows:
+            token_addr = normalize_address(str(row["token_addr"]))
+            projects_raw = str(row["projects_csv"] or "").strip()
+            projects = sorted({x.strip() for x in projects_raw.split(",") if x.strip()})
+            token_map[token_addr] = {
+                "event_count": int(row["event_count"] or 0),
+                "latest_ts": int(row["latest_ts"] or 0),
+                "projects": projects,
+            }
+
+        pair_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for row in pair_rows:
+            with contextlib.suppress(Exception):
+                token_addr = normalize_address(str(row["token_addr"]))
+                pool_addr = normalize_address(str(row["internal_pool"]))
+                projects_raw = str(row["projects_csv"] or "").strip()
+                projects = sorted({x.strip() for x in projects_raw.split(",") if x.strip()})
+                pair_map[(token_addr, pool_addr)] = {
+                    "event_count": int(row["event_count"] or 0),
+                    "latest_ts": int(row["latest_ts"] or 0),
+                    "projects": projects,
+                }
+        return pair_map, token_map
 
     def insert_pool_snapshot(
         self,
@@ -2507,6 +2575,7 @@ class VirtualsBot:
         self.decimals_cache: Dict[str, int] = {}
         self.block_ts_cache: Dict[int, int] = {}
         self.pool_discovery_checked_calls: Set[Tuple[str, str, str]] = set()
+        self.pool_discovery_refresh_lock = asyncio.Lock()
         self.scan_jobs: Dict[str, Dict[str, Any]] = {}
         self.scan_lock = asyncio.Lock()
         self.stats: Dict[str, Any] = {
@@ -3315,6 +3384,53 @@ class VirtualsBot:
         except Exception:
             return None
 
+    def _ingest_pair_created_log(
+        self,
+        lg: Dict[str, Any],
+        timestamp: int,
+        factory_allowlist: Optional[Set[str]] = None,
+    ) -> int:
+        topics = lg.get("topics") or []
+        if len(topics) < 3:
+            return 0
+        if str(topics[0]).lower() != PAIR_CREATED_TOPIC0:
+            return 0
+        try:
+            factory_addr = normalize_address(str(lg.get("address", "")))
+            if factory_allowlist and factory_addr not in factory_allowlist:
+                return 0
+            token0 = normalize_address(decode_topic_address(str(topics[1])))
+            token1 = normalize_address(decode_topic_address(str(topics[2])))
+            pair_addr = self._decode_pair_from_log_data(lg.get("data"))
+            if not pair_addr or pair_addr == ZERO_ADDRESS:
+                return 0
+        except Exception:
+            return 0
+
+        quote_set = set(self.cfg.pool_discovery_quote_token_addrs)
+        inserted = 0
+        if token1 in quote_set and token0 != token1:
+            self.storage.upsert_token_pool(
+                token_address=token0,
+                pool_address=pair_addr,
+                factory_address=factory_addr,
+                quote_token=token1,
+                is_primary=(token1 == self.cfg.virtual_token_addr),
+                discovered_at=timestamp,
+            )
+            inserted += 1
+        if token0 in quote_set and token1 != token0:
+            self.storage.upsert_token_pool(
+                token_address=token1,
+                pool_address=pair_addr,
+                factory_address=factory_addr,
+                quote_token=token0,
+                is_primary=(token0 == self.cfg.virtual_token_addr),
+                discovered_at=timestamp,
+            )
+            inserted += 1
+        return inserted
+
     async def discover_pools_from_receipt(
         self, receipt: Dict[str, Any], timestamp: int, rpc: Optional[RPCClient] = None
     ) -> None:
@@ -3333,37 +3449,9 @@ class VirtualsBot:
 
             if len(topics) < 3:
                 continue
-            if str(topics[0]).lower() != PAIR_CREATED_TOPIC0:
-                continue
-
-            with contextlib.suppress(Exception):
-                factory_addr = normalize_address(str(lg.get("address", "")))
-                if factory_set and factory_addr not in factory_set:
-                    continue
-                token0 = normalize_address(decode_topic_address(str(topics[1])))
-                token1 = normalize_address(decode_topic_address(str(topics[2])))
-                pair_addr = self._decode_pair_from_log_data(lg.get("data"))
-                if not pair_addr:
-                    continue
-
-                if token1 in quote_set and token0 != token1:
-                    self.storage.upsert_token_pool(
-                        token_address=token0,
-                        pool_address=pair_addr,
-                        factory_address=factory_addr,
-                        quote_token=token1,
-                        is_primary=(token1 == self.cfg.virtual_token_addr),
-                        discovered_at=timestamp,
-                    )
-                if token0 in quote_set and token1 != token0:
-                    self.storage.upsert_token_pool(
-                        token_address=token1,
-                        pool_address=pair_addr,
-                        factory_address=factory_addr,
-                        quote_token=token0,
-                        is_primary=(token0 == self.cfg.virtual_token_addr),
-                        discovered_at=timestamp,
-                    )
+            self._ingest_pair_created_log(
+                lg, timestamp, factory_allowlist=factory_set if factory_set else None
+            )
 
         if not candidate_tokens or not self.cfg.pool_factory_addrs:
             return
@@ -3413,6 +3501,118 @@ class VirtualsBot:
                             is_primary=(quote_addr == self.cfg.virtual_token_addr),
                             discovered_at=timestamp,
                         )
+
+    async def refresh_token_pools_from_chain(
+        self,
+        lookback_blocks: int = 320,
+        max_logs: int = 8000,
+        factory_addrs_override: Optional[List[str]] = None,
+        rpc: Optional[RPCClient] = None,
+    ) -> Dict[str, Any]:
+        rpc_client = rpc or self.http_rpc
+        lookback_blocks = max(20, min(int(lookback_blocks), 8000))
+        max_logs = max(100, min(int(max_logs), 50000))
+
+        latest_block = await rpc_client.get_latest_block_number()
+        from_block = max(0, latest_block - lookback_blocks + 1)
+
+        factory_source = (
+            list(factory_addrs_override)
+            if factory_addrs_override is not None
+            else list(self.cfg.pool_factory_addrs)
+        )
+        factories: List[str] = []
+        for x in factory_source:
+            with contextlib.suppress(Exception):
+                factories.append(normalize_address(str(x)))
+        factories = sorted(set(factories))
+        factory_allowlist = set(factories) if factories else None
+        scan_addresses: List[Optional[str]] = factories if factories else [None]
+        used_global_scan = not factories
+
+        scanned_logs = 0
+        matched_rows = 0
+        cursor_step = 120
+        stop_due_max_logs = False
+        errors: List[str] = []
+        now_ts = int(time.time())
+
+        async with self.pool_discovery_refresh_lock:
+            for scan_addr in scan_addresses:
+                cursor = from_block
+                while cursor <= latest_block:
+                    end_block = min(latest_block, cursor + cursor_step - 1)
+                    try:
+                        logs = await rpc_client.get_logs(
+                            from_block=cursor,
+                            to_block=end_block,
+                            address=scan_addr,
+                            topics=[PAIR_CREATED_TOPIC0],
+                        )
+                    except Exception as e:
+                        errors.append(
+                            f"{scan_addr or 'global'}@{cursor}-{end_block}: "
+                            f"{type(e).__name__}: {e}"
+                        )
+                        if cursor_step > 20:
+                            cursor_step = max(20, cursor_step // 2)
+                            continue
+                        cursor = end_block + 1
+                        continue
+
+                    for lg in logs:
+                        scanned_logs += 1
+                        if scanned_logs > max_logs:
+                            stop_due_max_logs = True
+                            break
+                        matched_rows += self._ingest_pair_created_log(
+                            lg,
+                            timestamp=now_ts,
+                            factory_allowlist=factory_allowlist,
+                        )
+                    if stop_due_max_logs:
+                        break
+                    cursor = end_block + 1
+                if stop_due_max_logs:
+                    break
+
+        latest_items = self.storage.list_token_pools(limit_n=120)
+        latest_items = self._annotate_token_pool_rows(latest_items)
+        status_counts: Dict[str, int] = defaultdict(int)
+        for row in latest_items:
+            status_counts[str(row.get("launch_status", "unknown"))] += 1
+        warning = ""
+        if used_global_scan:
+            warning = (
+                "POOL_FACTORY_ADDRS 为空，已使用全网 PairCreated 扫描。"
+                "建议配置 Factory 地址以提升速度和精度。"
+            )
+        if stop_due_max_logs:
+            warning = (
+                f"{warning} 已达到 max_logs={max_logs}，可调大 lookback/max_logs 继续补扫。"
+            ).strip()
+        if errors:
+            warning = (
+                f"{warning} 部分区间扫描失败（{len(errors)} 段），已跳过。"
+            ).strip()
+
+        return {
+            "ok": True,
+            "lookbackBlocks": lookback_blocks,
+            "fromBlock": from_block,
+            "toBlock": latest_block,
+            "usedGlobalScan": used_global_scan,
+            "effectiveFactories": factories,
+            "scanAddresses": scan_addresses,
+            "scannedLogs": scanned_logs,
+            "matchedRows": matched_rows,
+            "maxLogs": max_logs,
+            "warning": warning or None,
+            "errorSamples": errors[:5],
+            "poolCount": len(self.storage.list_token_pools(limit_n=1000)),
+            "statusCounts": dict(status_counts),
+            "items": latest_items,
+        }
 
     async def parse_receipt_for_launch(
         self,
@@ -4604,6 +4804,81 @@ class VirtualsBot:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
+    def _annotate_token_pool_rows(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not rows:
+            return []
+        pairs: List[Tuple[str, str]] = []
+        for row in rows:
+            with contextlib.suppress(Exception):
+                pairs.append(
+                    (
+                        normalize_address(str(row.get("token_address", ""))),
+                        normalize_address(str(row.get("pool_address", ""))),
+                    )
+                )
+        pair_map, token_map = self.storage.get_event_signals_for_token_pools(pairs)
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            x = dict(row)
+            token_addr = ""
+            pool_addr = ""
+            quote_addr = ""
+            with contextlib.suppress(Exception):
+                token_addr = normalize_address(str(x.get("token_address", "")))
+            with contextlib.suppress(Exception):
+                pool_addr = normalize_address(str(x.get("pool_address", "")))
+            with contextlib.suppress(Exception):
+                quote_addr = normalize_address(str(x.get("quote_token", "")))
+
+            pair_signal = pair_map.get((token_addr, pool_addr), {})
+            token_signal = token_map.get(token_addr, {})
+            pair_event_count = int(pair_signal.get("event_count", 0) or 0)
+            pair_latest_ts = int(pair_signal.get("latest_ts", 0) or 0)
+            pair_projects = list(pair_signal.get("projects", []))
+            token_event_count = int(token_signal.get("event_count", 0) or 0)
+            token_latest_ts = int(token_signal.get("latest_ts", 0) or 0)
+            token_projects = list(token_signal.get("projects", []))
+
+            is_primary = int(x.get("is_primary", 0) or 0) == 1
+            is_virtual_quote = bool(quote_addr) and quote_addr == self.cfg.virtual_token_addr
+
+            status = "watch"
+            status_label = "观察"
+            reason = "仅识别到新池，暂无 launch 交易信号"
+            if pair_event_count > 0:
+                status = "confirmed"
+                status_label = "确认待发射"
+                reason = f"命中 launch 交易 {pair_event_count} 条（内盘池匹配）"
+            elif is_virtual_quote and is_primary and token_event_count <= 0:
+                status = "suspected"
+                status_label = "疑似待发射"
+                reason = "VIRTUAL 主报价池，待 launch 交易确认"
+            elif is_virtual_quote and is_primary and token_event_count > 0:
+                status = "mismatch"
+                status_label = "待核验"
+                reason = "token 已有 launch 交易，但内盘池未匹配当前池地址"
+            elif is_virtual_quote:
+                status = "candidate"
+                status_label = "候选池"
+                reason = "VIRTUAL 报价池（非主池），建议继续观察"
+            elif token_event_count > 0:
+                status = "mismatch"
+                status_label = "待核验"
+                reason = "token 已有 launch 交易，但当前池非 VIRTUAL 主池"
+
+            x["launch_status"] = status
+            x["launch_status_label"] = status_label
+            x["launch_reason"] = reason
+            x["signal_event_count"] = pair_event_count
+            x["signal_latest_ts"] = pair_latest_ts
+            x["signal_projects"] = pair_projects
+            x["token_event_count"] = token_event_count
+            x["token_latest_ts"] = token_latest_ts
+            x["token_projects"] = token_projects
+            out.append(x)
+        return out
+
     async def token_pools_handler(self, request: web.Request) -> web.Response:
         token = request.query.get("token")
         token = str(token).strip() if token else None
@@ -4615,7 +4890,63 @@ class VirtualsBot:
             if token:
                 token = normalize_address(token)
             data = self.storage.list_token_pools(token_address=token, limit_n=limit_n)
-            return web.json_response({"count": len(data), "items": data})
+            data = self._annotate_token_pool_rows(data)
+            status_counts: Dict[str, int] = defaultdict(int)
+            for row in data:
+                status_counts[str(row.get("launch_status", "unknown"))] += 1
+            return web.json_response(
+                {"count": len(data), "statusCounts": dict(status_counts), "items": data}
+            )
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def token_pools_refresh_handler(self, request: web.Request) -> web.Response:
+        lookback_blocks = 320
+        max_logs = 8000
+        factory_addrs_override: Optional[List[str]] = None
+        if request.can_read_body:
+            with contextlib.suppress(Exception):
+                payload = await request.json()
+                if isinstance(payload, dict):
+                    if payload.get("lookback_blocks") is not None:
+                        lookback_blocks = int(payload.get("lookback_blocks"))
+                    if payload.get("max_logs") is not None:
+                        max_logs = int(payload.get("max_logs"))
+                    if payload.get("factory_addrs") is not None:
+                        factory_raw = payload.get("factory_addrs")
+                        parsed: List[str] = []
+                        if isinstance(factory_raw, str):
+                            parsed = [x.strip() for x in factory_raw.split(",") if x.strip()]
+                        elif isinstance(factory_raw, list):
+                            parsed = [str(x).strip() for x in factory_raw if str(x).strip()]
+                        factory_addrs_override = []
+                        for addr in parsed:
+                            with contextlib.suppress(Exception):
+                                factory_addrs_override.append(normalize_address(addr))
+                        factory_addrs_override = sorted(set(factory_addrs_override))
+        else:
+            with contextlib.suppress(Exception):
+                if request.query.get("lookback_blocks") is not None:
+                    lookback_blocks = int(request.query.get("lookback_blocks", "320"))
+            with contextlib.suppress(Exception):
+                if request.query.get("max_logs") is not None:
+                    max_logs = int(request.query.get("max_logs", "8000"))
+            with contextlib.suppress(Exception):
+                if request.query.get("factory_addrs") is not None:
+                    raw = str(request.query.get("factory_addrs") or "")
+                    parsed = [x.strip() for x in raw.split(",") if x.strip()]
+                    factory_addrs_override = []
+                    for addr in parsed:
+                        with contextlib.suppress(Exception):
+                            factory_addrs_override.append(normalize_address(addr))
+                    factory_addrs_override = sorted(set(factory_addrs_override))
+        try:
+            data = await self.refresh_token_pools_from_chain(
+                lookback_blocks=lookback_blocks,
+                max_logs=max_logs,
+                factory_addrs_override=factory_addrs_override,
+            )
+            return web.json_response(data)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -4817,6 +5148,7 @@ class VirtualsBot:
         app.router.add_get("/event-delays", self.event_delays_handler)
         app.router.add_get("/project-tax", self.project_tax_handler)
         app.router.add_get("/token-pools", self.token_pools_handler)
+        app.router.add_post("/token-pools/refresh", self.token_pools_refresh_handler)
         app.router.add_get("/pool-snapshots", self.pool_snapshots_handler)
         app.router.add_get("/robot/summary", self.robot_summary_handler)
         app.router.add_get("/robot/mode", self.robot_mode_get_handler)

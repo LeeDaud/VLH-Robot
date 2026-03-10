@@ -457,6 +457,13 @@
       box-shadow: 0 0 14px rgba(123, 255, 176, 0.18);
     }
 
+    .mid {
+      color: #fff6dd;
+      border-color: rgba(255, 205, 108, 0.52);
+      background: rgba(255, 205, 108, 0.14);
+      box-shadow: 0 0 14px rgba(255, 205, 108, 0.16);
+    }
+
     .bad {
       color: #ffe3e7;
       border-color: rgba(255, 123, 137, 0.5);
@@ -1009,6 +1016,29 @@
 
     <section class="card">
       <div class="section-title">全局自动识别待发射项目（Pool Discovery）</div>
+      <div class="form-actions">
+        <button id="poolRefreshBtn" class="pill">链上识别刷新</button>
+        <label for="poolRefreshLookback" class="hint">回看区块数</label>
+        <input
+          id="poolRefreshLookback"
+          type="number"
+          min="20"
+          max="8000"
+          step="20"
+          class="pill-input"
+          style="min-width: 130px;"
+          value="320"
+        />
+        <label for="poolFactoryInput" class="hint">Factory(可选)</label>
+        <input
+          id="poolFactoryInput"
+          class="pill-input"
+          style="min-width: 360px;"
+          placeholder="留空=使用配置；多个地址用逗号分隔"
+        />
+        <button id="poolAddSupplementFactoryBtn" class="pill" type="button">加入补充Factory</button>
+        <span id="poolRefreshMessage" class="hint">非定时扫描，点击按钮触发一次链上识别。</span>
+      </div>
       <div id="poolMeta" class="hint" style="margin-bottom:10px;">-</div>
       <div class="table-wrap">
         <table id="poolTable">
@@ -1019,6 +1049,8 @@
               <th>报价代币</th>
               <th>Factory</th>
               <th>主池</th>
+              <th>判定状态</th>
+              <th>判定依据</th>
               <th>发现时间</th>
             </tr>
           </thead>
@@ -1280,6 +1312,11 @@
     const robotModeLiveBtn = document.getElementById("robotModeLiveBtn");
     const robotResumeBtn = document.getElementById("robotResumeBtn");
     const robotControlMessage = document.getElementById("robotControlMessage");
+    const poolRefreshBtn = document.getElementById("poolRefreshBtn");
+    const poolRefreshLookback = document.getElementById("poolRefreshLookback");
+    const poolFactoryInput = document.getElementById("poolFactoryInput");
+    const poolAddSupplementFactoryBtn = document.getElementById("poolAddSupplementFactoryBtn");
+    const poolRefreshMessage = document.getElementById("poolRefreshMessage");
     const robotModeValue = document.getElementById("robotModeValue");
     const robotEntryValue = document.getElementById("robotEntryValue");
     const robotRiskValue = document.getElementById("robotRiskValue");
@@ -1345,6 +1382,7 @@
     const API_BASE_URL = String(apiBaseMeta?.getAttribute("content") || "")
       .trim()
       .replace(/\/+$/, "");
+    const SUPPLEMENT_POOL_FACTORY_ADDR = "0x8909dc15e40173ff4699343b6eb8132c65e18ec6";
 
     const toNum = (v) => {
       const n = Number(v);
@@ -1995,6 +2033,17 @@
       }
       if (meta.robot && typeof meta.robot === "object") {
         setRobotModeButtons(meta.robot.mode || "observe");
+        const factories = Array.isArray(meta.robot.pool_factory_addrs)
+          ? meta.robot.pool_factory_addrs
+          : [];
+        if (poolFactoryInput && !poolFactoryInput.value.trim()) {
+          poolFactoryInput.value = factories.join(", ");
+        }
+        if (factories.length) {
+          poolRefreshMessage.textContent = `已配置 Factory 数量：${factories.length}，点击“链上识别刷新”执行一次非定时扫描。`;
+        } else {
+          poolRefreshMessage.textContent = "未配置 POOL_FACTORY_ADDRS，将使用全网 PairCreated 扫描（速度较慢）。";
+        }
       }
       renderMonitoredWallets(meta.wallets || []);
       syncLaunchFormToSelectedProject(projectSelect.value);
@@ -2584,7 +2633,32 @@
 
     function renderPoolTable(rows) {
       poolBody.innerHTML = "";
+      const statusClassMap = {
+        confirmed: "ok",
+        suspected: "mid",
+        candidate: "mid",
+        mismatch: "bad",
+        watch: ""
+      };
+      const statusCount = {
+        confirmed: 0,
+        suspected: 0,
+        candidate: 0,
+        mismatch: 0,
+        watch: 0
+      };
       (rows || []).forEach((r) => {
+        const statusKey = String(r.launch_status || "watch").toLowerCase();
+        const statusCls = statusClassMap[statusKey] || "";
+        if (Object.prototype.hasOwnProperty.call(statusCount, statusKey)) {
+          statusCount[statusKey] += 1;
+        }
+        const signalProjects = Array.isArray(r.signal_projects) ? r.signal_projects.join(", ") : "";
+        const reasonTitle = [
+          r.launch_reason || "",
+          r.signal_event_count ? `launchTx=${r.signal_event_count}` : "",
+          signalProjects ? `projects=${signalProjects}` : ""
+        ].filter(Boolean).join(" | ");
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${addrWithCopyHtml(r.token_address)}</td>
@@ -2592,16 +2666,24 @@
           <td>${addrWithCopyHtml(r.quote_token)}</td>
           <td>${addrWithCopyHtml(r.factory_address)}</td>
           <td style="text-align:center;">${Number(r.is_primary) ? "是" : "否"}</td>
+          <td>
+            <span class="status ${statusCls}">${r.launch_status_label || "观察"}</span>
+          </td>
+          <td>${tipSpanHtml(String(r.launch_reason || "-"), reasonTitle || String(r.launch_reason || "-"))}</td>
           <td>${fmtTs(r.discovered_at || r.updated_at)}</td>
         `;
         poolBody.appendChild(tr);
       });
       if (!(rows || []).length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="6" class="muted">暂无自动识别到的池。</td>`;
+        tr.innerHTML = `<td colspan="8" class="muted">暂无自动识别到的池。</td>`;
         poolBody.appendChild(tr);
       }
-      poolMeta.textContent = `全局识别池数量：${fmtNum((rows || []).length, 0)}`;
+      const primaryCount = (rows || []).filter((r) => Number(r?.is_primary)).length;
+      poolMeta.textContent =
+        `全局识别池数量：${fmtNum((rows || []).length, 0)} | ` +
+        `VIRTUAL 报价池：${fmtNum(primaryCount, 0)} | ` +
+        `确认=${fmtNum(statusCount.confirmed, 0)} 疑似=${fmtNum(statusCount.suspected, 0)} 候选=${fmtNum(statusCount.candidate, 0)}`;
     }
 
     function renderRobotPositions(rows) {
@@ -2667,6 +2749,60 @@
       await requestJsonWithBody("/robot/resume", "POST", {});
       await refreshAllSafe();
       robotControlMessage.textContent = "Robot 风控暂停已解除";
+      return true;
+    }
+
+    function parseFactoryAddrsInput(rawText) {
+      return String(rawText || "")
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter((x) => /^0x[a-f0-9]{40}$/.test(x));
+    }
+
+    function formatFactoryAddrs(addrs) {
+      return Array.from(new Set((addrs || []).map((x) => String(x || "").trim().toLowerCase()).filter((x) => /^0x[a-f0-9]{40}$/.test(x)))).join(", ");
+    }
+
+    function addSupplementFactoryAddr() {
+      const current = parseFactoryAddrsInput(poolFactoryInput?.value || "");
+      const merged = formatFactoryAddrs([...current, SUPPLEMENT_POOL_FACTORY_ADDR]);
+      if (poolFactoryInput) {
+        poolFactoryInput.value = merged;
+      }
+      poolRefreshMessage.textContent = `已加入补充 Factory：${SUPPLEMENT_POOL_FACTORY_ADDR}`;
+    }
+
+    async function refreshPoolDiscoveryOnChain({ silent = false } = {}) {
+      const rawLookback = Number(poolRefreshLookback.value || 320);
+      const lookbackBlocks = Math.max(20, Math.min(8000, Number.isFinite(rawLookback) ? rawLookback : 320));
+      poolRefreshLookback.value = String(Math.round(lookbackBlocks));
+      const factoryAddrs = parseFactoryAddrsInput(poolFactoryInput?.value || "");
+      const payload = {
+        lookback_blocks: Math.round(lookbackBlocks),
+      };
+      if (factoryAddrs.length) {
+        payload.factory_addrs = Array.from(new Set(factoryAddrs));
+      }
+
+      const data = await requestJsonWithBody("/token-pools/refresh", "POST", payload);
+      if (Array.isArray(data?.items)) {
+        renderPoolTable(data.items);
+      }
+      const modeText = data?.usedGlobalScan ? "全网 PairCreated" : "Factory 定向";
+      const warnText = data?.warning ? ` | ${data.warning}` : "";
+      const statusCounts = (data?.statusCounts && typeof data.statusCounts === "object")
+        ? data.statusCounts
+        : {};
+      poolRefreshMessage.textContent =
+        `扫描模式=${modeText} | 扫描日志=${fmtNum(data?.scannedLogs || 0, 0)} | ` +
+        `匹配写入=${fmtNum(data?.matchedRows || 0, 0)} | 当前池数=${fmtNum(data?.poolCount || 0, 0)} | ` +
+        `确认=${fmtNum(statusCounts.confirmed || 0, 0)} 疑似=${fmtNum(statusCounts.suspected || 0, 0)} | ` +
+        `Factory数=${fmtNum((data?.effectiveFactories || []).length, 0)}` +
+        warnText;
+      if (!silent) {
+        refreshMessage.textContent = `链上识别刷新成功：${new Date().toLocaleTimeString()}`;
+      }
+      await refreshAllSafe();
       return true;
     }
 
@@ -2796,6 +2932,11 @@
         }
         await loadLaunchConfigs();
         await refreshAllSafe();
+        setTimeout(() => {
+          refreshPoolDiscoveryOnChain({ silent: true }).catch((e) => {
+            poolRefreshMessage.textContent = `启动扫描失败：${e.message || e}`;
+          });
+        }, 500);
         const minuteRange = getMinuteRangeTs();
         minuteRangeMessage.textContent = `当前分钟区间：${fmtTs(minuteRange.from)} ~ ${fmtTs(minuteRange.to)}`;
         refreshMessage.textContent = "已就绪";
@@ -2965,6 +3106,17 @@
         resumeRobotRisk,
         robotControlMessage
       ).catch(console.error);
+    });
+    poolRefreshBtn.addEventListener("click", () => {
+      runButtonAction(
+        poolRefreshBtn,
+        { loading: "扫描中...", success: "已完成", failed: "扫描失败" },
+        () => refreshPoolDiscoveryOnChain(),
+        poolRefreshMessage
+      ).catch(console.error);
+    });
+    poolAddSupplementFactoryBtn.addEventListener("click", () => {
+      addSupplementFactoryAddr();
     });
     refreshBtn.addEventListener("click", () => {
       runButtonAction(
