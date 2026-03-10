@@ -28,12 +28,16 @@ Virtuals-Launch-Hunter 是一个面向 Base 链的实时监控与回扫分析工
 
 ## 目录（发布最小集合）
 - `virtuals_bot.py`：后端主程序
+- `signer_service.py`：签名执行服务（Robot live webhook）
 - `dashboard.html`：前端页面
 - `favicon-vpulse.svg`：浏览器图标
 - `config.example.json`：配置模板（API 已脱敏）
+- `signer_config.example.json`：signer 配置模板
 - `requirements.txt`：依赖
 - `start_3roles.ps1`：一键启动三进程
 - `stop_3roles.ps1`：一键停止三进程
+- `start_signer.ps1`：启动 signer 服务
+- `stop_signer.ps1`：停止 signer 服务
 - `RELEASE_v3.1.0_更新说明.md`：历史版本更新日志
 - `RELEASE_v3.1.0_使用说明.md`：历史版本使用教程
 - `需求文档_v3.0.0.md`：需求说明模板
@@ -123,6 +127,59 @@ python virtuals_bot.py --config .\config.json --role backfill
   - `{ "tx_hash": "0x..." }`
   - `{ "txHash": "0x..." }`
   - `{ "accepted": true }`（无 tx hash 时将记录为 webhook accepted）
+
+### Signer 服务部署
+1. 准备配置：
+```powershell
+copy .\signer_config.example.json .\signer_config.json
+```
+2. 编辑 `signer_config.json` 的关键字段：
+- `RPC_URL`：Base HTTP RPC
+- `CHAIN_ID`：8453
+- `PRIVATE_KEY`：执行钱包私钥（仅 signer 机器可见）
+- `AUTH_TOKEN`：给 `virtuals_bot` 调用 signer 的 Bearer token
+- `MOCK_MODE`：联调时可 `true`，实盘必须 `false`
+- `BUILDER_WEBHOOK_URL`：可选，若不传 `tx` 则必须配置 builder
+3. 启动 signer：
+```powershell
+.\start_signer.ps1 -ConfigPath .\signer_config.json
+```
+4. 自检 signer：
+```powershell
+curl http://127.0.0.1:19090/health
+```
+5. 在 `config.json` 配置 Robot 调用 signer：
+- `ROBOT_EXECUTOR_WEBHOOK_URL`: `http://127.0.0.1:19090/execute`
+- `ROBOT_EXECUTOR_AUTH_TOKEN`: 与 signer 的 `AUTH_TOKEN` 保持一致
+- `ROBOT_EXECUTOR_TIMEOUT_SEC`: 例如 `15`
+6. 重启主服务：
+```powershell
+.\start_3roles.ps1 -ForceRestart
+```
+7. 验证执行引擎状态：
+```powershell
+curl http://127.0.0.1:8080/robot/execution
+```
+
+### Builder Webhook 协议（给 signer 组装 unsigned tx）
+- signer 会向 `BUILDER_WEBHOOK_URL` 发送：
+  - `intent`: Robot 交易意图
+  - `signer.chain_id`
+  - `signer.address`
+- builder 成功返回任一格式：
+  - `{ "tx": { "to": "0x...", "data": "0x...", "value": "0x0" } }`
+  - `{ "to": "0x...", "data": "0x...", "value": "0x0" }`
+  - `{ "accepted": true }`（仅确认接收，不返回交易）
+- 若 builder 返回 `4xx/5xx` 或 `error`，signer 会判定执行失败并回传错误。
+
+### Builder Mock（联调）
+- 项目内置 `signer_builder_mock.py`，仅用于链路联调，不会生成真实 DEX 交易。
+- 启动命令：
+```powershell
+python .\signer_builder_mock.py --host 127.0.0.1 --port 19091
+```
+- 配置 signer：
+  - `BUILDER_WEBHOOK_URL`: `http://127.0.0.1:19091/build`
 
 ## 常见问题
 - 端口占用（10048）：说明 8080 已被占用，停掉旧进程或改 `API_PORT`。
