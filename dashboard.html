@@ -1146,6 +1146,56 @@
           <div class="kpi-title">浮动盈亏(V)</div>
           <div id="robotPnlValue" class="kpi-value">-</div>
         </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">收益率</div>
+          <div id="robotRoiValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">授权额度(授权Token)</div>
+          <div id="robotAllowanceValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">当前余额(授权Token)</div>
+          <div id="robotWalletBalanceValue" class="kpi-value">-</div>
+        </div>
+        <div class="robot-kpi-item">
+          <div class="kpi-title">预计可获代币</div>
+          <div id="robotFutureTokenValue" class="kpi-value">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">OKX Wallet 连接与授权（半自动）</div>
+      <div class="form-actions">
+        <button id="okxDetectBtn" class="pill" type="button">检测钱包</button>
+        <button id="okxConnectBtn" class="pill" type="button">连接钱包</button>
+        <button id="okxSwitchBaseBtn" class="pill" type="button">切换 Base</button>
+        <button id="okxRefreshBtn" class="pill" type="button">刷新状态</button>
+      </div>
+      <div class="form-actions">
+        <span id="okxProviderStatus" class="hint">Provider：-</span>
+        <span id="okxAccountValue" class="hint">账户：-</span>
+        <span id="okxChainValue" class="hint">链：-</span>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="okxTokenAddrInput">授权 Token 地址</label>
+          <input id="okxTokenAddrInput" placeholder="0x..." />
+        </div>
+        <div class="field">
+          <label for="okxSpenderAddrInput">Spender 地址</label>
+          <input id="okxSpenderAddrInput" placeholder="0x..." />
+        </div>
+        <div class="field">
+          <label for="okxApproveAmountInput">授权数量（最小单位）</label>
+          <input id="okxApproveAmountInput" placeholder="例如 1000000 或 0x..." />
+        </div>
+      </div>
+      <div class="form-actions">
+        <button id="okxApproveMaxBtn" class="pill" type="button">填充 MaxUint256</button>
+        <button id="okxAuthorizeBtn" class="pill" type="button">发起授权</button>
+        <span id="okxWalletMessage" class="hint">说明：连接可记住，但每次发送交易仍需钱包弹窗确认。</span>
       </div>
     </section>
 
@@ -1312,6 +1362,19 @@
     const robotModeLiveBtn = document.getElementById("robotModeLiveBtn");
     const robotResumeBtn = document.getElementById("robotResumeBtn");
     const robotControlMessage = document.getElementById("robotControlMessage");
+    const okxDetectBtn = document.getElementById("okxDetectBtn");
+    const okxConnectBtn = document.getElementById("okxConnectBtn");
+    const okxSwitchBaseBtn = document.getElementById("okxSwitchBaseBtn");
+    const okxRefreshBtn = document.getElementById("okxRefreshBtn");
+    const okxProviderStatus = document.getElementById("okxProviderStatus");
+    const okxAccountValue = document.getElementById("okxAccountValue");
+    const okxChainValue = document.getElementById("okxChainValue");
+    const okxTokenAddrInput = document.getElementById("okxTokenAddrInput");
+    const okxSpenderAddrInput = document.getElementById("okxSpenderAddrInput");
+    const okxApproveAmountInput = document.getElementById("okxApproveAmountInput");
+    const okxApproveMaxBtn = document.getElementById("okxApproveMaxBtn");
+    const okxAuthorizeBtn = document.getElementById("okxAuthorizeBtn");
+    const okxWalletMessage = document.getElementById("okxWalletMessage");
     const poolRefreshBtn = document.getElementById("poolRefreshBtn");
     const poolRefreshLookback = document.getElementById("poolRefreshLookback");
     const poolFactoryInput = document.getElementById("poolFactoryInput");
@@ -1321,6 +1384,10 @@
     const robotEntryValue = document.getElementById("robotEntryValue");
     const robotRiskValue = document.getElementById("robotRiskValue");
     const robotPnlValue = document.getElementById("robotPnlValue");
+    const robotRoiValue = document.getElementById("robotRoiValue");
+    const robotAllowanceValue = document.getElementById("robotAllowanceValue");
+    const robotWalletBalanceValue = document.getElementById("robotWalletBalanceValue");
+    const robotFutureTokenValue = document.getElementById("robotFutureTokenValue");
     const poolMeta = document.getElementById("poolMeta");
     const robotPosMeta = document.getElementById("robotPosMeta");
     const poolBody = document.querySelector("#poolTable tbody");
@@ -1378,10 +1445,22 @@
     let runtimePauseToggleInFlight = false;
     let runtimeHeartbeatTimer = null;
     let runtimeHeartbeatInFlight = false;
+    let okxProviderBound = false;
+    let boundOkxProviderRef = null;
+    let lastRobotPositionsRows = [];
+    let lastWalletMetricsAt = 0;
+    const erc20DecimalsCache = new Map();
     const apiBaseMeta = document.querySelector('meta[name="vpulse-api-base"]');
     const API_BASE_URL = String(apiBaseMeta?.getAttribute("content") || "")
       .trim()
       .replace(/\/+$/, "");
+    const BASE_CHAIN_ID_HEX = "0x2105";
+    const BASE_CHAIN_ID_DEC = 8453;
+    const MAX_UINT256_DEC = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    const OKX_APPROVE_TOKEN_STORAGE_KEY = "okx_approve_token_addr";
+    const OKX_APPROVE_SPENDER_STORAGE_KEY = "okx_approve_spender_addr";
+    const OKX_APPROVE_AMOUNT_STORAGE_KEY = "okx_approve_amount_raw";
+    const WALLET_METRICS_MIN_REFRESH_MS = 10000;
     const SUPPLEMENT_POOL_FACTORY_ADDR = "0x8909dc15e40173ff4699343b6eb8132c65e18ec6";
 
     const toNum = (v) => {
@@ -1996,6 +2075,468 @@
       }
       ta.remove();
       return ok;
+    }
+
+    function getOkxProvider() {
+      if (window?.okxwallet?.ethereum && typeof window.okxwallet.ethereum.request === "function") {
+        return window.okxwallet.ethereum;
+      }
+      if (window?.okxwallet && typeof window.okxwallet.request === "function") {
+        return window.okxwallet;
+      }
+      return null;
+    }
+
+    function isHexAddress(addr) {
+      return /^0x[a-fA-F0-9]{40}$/.test(String(addr || "").trim());
+    }
+
+    function normalizeChainIdHex(chainId) {
+      const raw = String(chainId || "").trim().toLowerCase();
+      if (raw.startsWith("0x")) return raw;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return "";
+      return `0x${Math.trunc(n).toString(16)}`;
+    }
+
+    function isBaseChain(chainId) {
+      const c = normalizeChainIdHex(chainId);
+      return c === BASE_CHAIN_ID_HEX;
+    }
+
+    function setOkxWalletStatus({ providerText, account, chainId, message } = {}) {
+      if (providerText !== undefined) {
+        okxProviderStatus.textContent = `Provider：${providerText || "-"}`;
+      }
+      if (account !== undefined) {
+        okxAccountValue.textContent = account ? `账户：${shortAddr(account)}` : "账户：-";
+      }
+      if (chainId !== undefined) {
+        if (!chainId) {
+          okxChainValue.textContent = "链：-";
+        } else {
+          const cid = normalizeChainIdHex(chainId);
+          const tag = isBaseChain(cid) ? "Base" : "非Base";
+          okxChainValue.textContent = `链：${cid} (${tag})`;
+        }
+      }
+      if (message) {
+        okxWalletMessage.textContent = String(message);
+      }
+    }
+
+    function saveOkxAuthorizeDraft() {
+      localStorage.setItem(OKX_APPROVE_TOKEN_STORAGE_KEY, String(okxTokenAddrInput?.value || "").trim());
+      localStorage.setItem(OKX_APPROVE_SPENDER_STORAGE_KEY, String(okxSpenderAddrInput?.value || "").trim());
+      localStorage.setItem(OKX_APPROVE_AMOUNT_STORAGE_KEY, String(okxApproveAmountInput?.value || "").trim());
+    }
+
+    function loadOkxAuthorizeDraft() {
+      if (okxTokenAddrInput && !okxTokenAddrInput.value) {
+        okxTokenAddrInput.value = String(localStorage.getItem(OKX_APPROVE_TOKEN_STORAGE_KEY) || "");
+      }
+      if (okxSpenderAddrInput && !okxSpenderAddrInput.value) {
+        okxSpenderAddrInput.value = String(localStorage.getItem(OKX_APPROVE_SPENDER_STORAGE_KEY) || "");
+      }
+      if (okxApproveAmountInput && !okxApproveAmountInput.value) {
+        okxApproveAmountInput.value = String(localStorage.getItem(OKX_APPROVE_AMOUNT_STORAGE_KEY) || "");
+      }
+    }
+
+    async function refreshOkxWalletStatus({ silent = true } = {}) {
+      const provider = getOkxProvider();
+      if (!provider) {
+        setOkxWalletStatus({
+          providerText: "未检测到 OKX Wallet",
+          account: "",
+          chainId: "",
+          message: silent ? undefined : "请先安装并解锁 OKX Wallet 扩展。",
+        });
+        return { provider: null, account: "", chainId: "" };
+      }
+
+      let accounts = [];
+      let chainId = "";
+      try {
+        accounts = await provider.request({ method: "eth_accounts" });
+      } catch (e) {
+        accounts = [];
+      }
+      try {
+        chainId = await provider.request({ method: "eth_chainId" });
+      } catch (e) {
+        chainId = "";
+      }
+      const account = Array.isArray(accounts) && accounts.length ? String(accounts[0]) : "";
+      setOkxWalletStatus({
+        providerText: "已检测到",
+        account,
+        chainId,
+      });
+      if (!silent) {
+        okxWalletMessage.textContent = account
+          ? "钱包状态已刷新。"
+          : "钱包未连接，请点击“连接钱包”。";
+      }
+      return { provider, account, chainId };
+    }
+
+    function attachOkxProviderListeners(provider) {
+      if (!provider || typeof provider.on !== "function") {
+        return;
+      }
+      if (okxProviderBound && boundOkxProviderRef === provider) {
+        return;
+      }
+      provider.on("accountsChanged", () => {
+        refreshOkxWalletStatus({ silent: true }).catch(console.error);
+        refreshRobotWalletMetrics({ force: true }).catch(console.error);
+      });
+      provider.on("chainChanged", () => {
+        refreshOkxWalletStatus({ silent: true }).catch(console.error);
+        refreshRobotWalletMetrics({ force: true }).catch(console.error);
+      });
+      okxProviderBound = true;
+      boundOkxProviderRef = provider;
+    }
+
+    async function okxConnectWallet() {
+      const provider = getOkxProvider();
+      if (!provider) {
+        throw new Error("未检测到 OKX Wallet Provider");
+      }
+      attachOkxProviderListeners(provider);
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      const account = Array.isArray(accounts) && accounts.length ? String(accounts[0]) : "";
+      await refreshOkxWalletStatus({ silent: true });
+      await refreshRobotWalletMetrics({ force: true }).catch(() => false);
+      okxWalletMessage.textContent = account
+        ? `连接成功：${shortAddr(account)}`
+        : "连接完成，但未返回账号。";
+      return true;
+    }
+
+    async function okxSwitchToBase() {
+      const provider = getOkxProvider();
+      if (!provider) {
+        throw new Error("未检测到 OKX Wallet Provider");
+      }
+      attachOkxProviderListeners(provider);
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: BASE_CHAIN_ID_HEX }],
+        });
+      } catch (e) {
+        const code = Number(e?.code);
+        if (code === 4902) {
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: BASE_CHAIN_ID_HEX,
+                chainName: "Base Mainnet",
+                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                rpcUrls: ["https://mainnet.base.org"],
+                blockExplorerUrls: ["https://basescan.org"],
+              },
+            ],
+          });
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: BASE_CHAIN_ID_HEX }],
+          });
+        } else {
+          throw e;
+        }
+      }
+      await refreshOkxWalletStatus({ silent: true });
+      await refreshRobotWalletMetrics({ force: true }).catch(() => false);
+      okxWalletMessage.textContent = "已切换到 Base 主网。";
+      return true;
+    }
+
+    function parseApproveAmountToHex(rawValue) {
+      const raw = String(rawValue || "").trim();
+      if (!raw) {
+        throw new Error("请输入授权数量");
+      }
+      if (/^0x[0-9a-fA-F]+$/.test(raw)) {
+        return `0x${raw.slice(2).replace(/^0+/, "") || "0"}`;
+      }
+      if (!/^[0-9]+$/.test(raw)) {
+        throw new Error("授权数量仅支持十进制整数或 0x 十六进制");
+      }
+      return `0x${BigInt(raw).toString(16)}`;
+    }
+
+    function encodeErc20Approve(spenderAddr, amountHex) {
+      const spender = String(spenderAddr || "").trim().toLowerCase();
+      const amountRaw = String(amountHex || "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(spender)) {
+        throw new Error("spender 地址格式无效");
+      }
+      if (!/^0x[0-9a-f]+$/.test(amountRaw)) {
+        throw new Error("授权数量格式无效");
+      }
+      const selector = "095ea7b3";
+      const spenderWord = spender.slice(2).padStart(64, "0");
+      const amountWord = amountRaw.slice(2).padStart(64, "0");
+      return `0x${selector}${spenderWord}${amountWord}`;
+    }
+
+    function encodeErc20BalanceOf(ownerAddr) {
+      const owner = String(ownerAddr || "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(owner)) {
+        throw new Error("owner 地址格式无效");
+      }
+      return `0x70a08231${owner.slice(2).padStart(64, "0")}`;
+    }
+
+    function encodeErc20Allowance(ownerAddr, spenderAddr) {
+      const owner = String(ownerAddr || "").trim().toLowerCase();
+      const spender = String(spenderAddr || "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(owner)) {
+        throw new Error("owner 地址格式无效");
+      }
+      if (!/^0x[a-f0-9]{40}$/.test(spender)) {
+        throw new Error("spender 地址格式无效");
+      }
+      return `0xdd62ed3e${owner.slice(2).padStart(64, "0")}${spender.slice(2).padStart(64, "0")}`;
+    }
+
+    function parseHexToBigInt(rawHex) {
+      const hex = String(rawHex || "").trim().toLowerCase();
+      if (!hex || hex === "0x") return 0n;
+      if (!/^0x[0-9a-f]+$/.test(hex)) return 0n;
+      return BigInt(hex);
+    }
+
+    function formatUnitsFromBigInt(value, decimals = 18, fracDigits = 6) {
+      const v = typeof value === "bigint" ? value : BigInt(value || 0);
+      const d = Math.max(0, Math.min(36, Number(decimals || 0)));
+      if (d === 0) return v.toString();
+      const base = 10n ** BigInt(d);
+      const whole = v / base;
+      const frac = v % base;
+      if (fracDigits <= 0) return whole.toString();
+      const keep = Math.max(0, Math.min(d, Number(fracDigits)));
+      const fracRaw = frac.toString().padStart(d, "0").slice(0, keep);
+      const fracTrim = fracRaw.replace(/0+$/, "");
+      return fracTrim ? `${whole.toString()}.${fracTrim}` : whole.toString();
+    }
+
+    function pickRobotReferencePriceV() {
+      const rows = Array.isArray(lastRobotPositionsRows) ? lastRobotPositionsRows : [];
+      const row = rows.find((x) => Number(x?.last_price_v) > 0);
+      if (!row) return null;
+      const n = Number(row.last_price_v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
+    function setRobotWalletMetricsPlaceholder() {
+      robotAllowanceValue.textContent = "-";
+      robotWalletBalanceValue.textContent = "-";
+      robotFutureTokenValue.textContent = "-";
+    }
+
+    async function ethCall(provider, to, data) {
+      return provider.request({
+        method: "eth_call",
+        params: [{ to, data }, "latest"],
+      });
+    }
+
+    async function getTokenDecimals(provider, tokenAddr) {
+      const token = String(tokenAddr || "").trim().toLowerCase();
+      if (erc20DecimalsCache.has(token)) {
+        return erc20DecimalsCache.get(token);
+      }
+      let decimals = 18;
+      try {
+        const out = await ethCall(provider, token, "0x313ce567");
+        const parsed = Number(parseHexToBigInt(out));
+        if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 36) {
+          decimals = parsed;
+        }
+      } catch (e) {
+        decimals = 18;
+      }
+      erc20DecimalsCache.set(token, decimals);
+      return decimals;
+    }
+
+    async function refreshRobotWalletMetrics({ force = false } = {}) {
+      const now = Date.now();
+      if (!force && now - lastWalletMetricsAt < WALLET_METRICS_MIN_REFRESH_MS) {
+        return false;
+      }
+      const provider = getOkxProvider();
+      if (!provider) {
+        setRobotWalletMetricsPlaceholder();
+        lastWalletMetricsAt = now;
+        return false;
+      }
+
+      let accounts = [];
+      try {
+        accounts = await provider.request({ method: "eth_accounts" });
+      } catch (e) {
+        accounts = [];
+      }
+      const account = Array.isArray(accounts) && accounts.length ? String(accounts[0]).toLowerCase() : "";
+      if (!isHexAddress(account)) {
+        setRobotWalletMetricsPlaceholder();
+        lastWalletMetricsAt = now;
+        return false;
+      }
+
+      const tokenAddr = String(okxTokenAddrInput?.value || "").trim().toLowerCase();
+      const spenderAddr = String(okxSpenderAddrInput?.value || "").trim().toLowerCase();
+      if (!isHexAddress(tokenAddr)) {
+        setRobotWalletMetricsPlaceholder();
+        lastWalletMetricsAt = now;
+        return false;
+      }
+
+      let decimals = 18;
+      try {
+        decimals = await getTokenDecimals(provider, tokenAddr);
+      } catch (e) {
+        decimals = 18;
+      }
+
+      let balanceRaw = null;
+      let balanceNum = null;
+      try {
+        const balanceHex = await ethCall(provider, tokenAddr, encodeErc20BalanceOf(account));
+        balanceRaw = parseHexToBigInt(balanceHex);
+        const balanceText = formatUnitsFromBigInt(balanceRaw, decimals, 6);
+        balanceNum = Number(formatUnitsFromBigInt(balanceRaw, decimals, 12));
+        robotWalletBalanceValue.innerHTML = tipSpanHtml(
+          fmtNum(balanceText, 6),
+          `精确值: ${balanceText}`
+        );
+      } catch (e) {
+        balanceRaw = null;
+        balanceNum = null;
+        robotWalletBalanceValue.textContent = "-";
+      }
+
+      let allowanceRaw = null;
+      let allowanceNum = null;
+      if (isHexAddress(spenderAddr)) {
+        try {
+          const allowanceHex = await ethCall(
+            provider,
+            tokenAddr,
+            encodeErc20Allowance(account, spenderAddr)
+          );
+          allowanceRaw = parseHexToBigInt(allowanceHex);
+          const allowanceText = formatUnitsFromBigInt(allowanceRaw, decimals, 6);
+          allowanceNum = Number(formatUnitsFromBigInt(allowanceRaw, decimals, 12));
+          robotAllowanceValue.innerHTML = tipSpanHtml(
+            fmtNum(allowanceText, 6),
+            `精确值: ${allowanceText}`
+          );
+        } catch (e) {
+          allowanceRaw = null;
+          allowanceNum = null;
+          robotAllowanceValue.textContent = "-";
+        }
+      } else {
+        robotAllowanceValue.textContent = "-";
+      }
+
+      const referencePriceV = pickRobotReferencePriceV();
+      if (
+        allowanceRaw !== null &&
+        Number.isFinite(allowanceNum) &&
+        allowanceNum >= 0 &&
+        Number.isFinite(referencePriceV) &&
+        referencePriceV > 0
+      ) {
+        const spendableV = Number.isFinite(balanceNum) && balanceNum >= 0
+          ? Math.min(allowanceNum, balanceNum)
+          : allowanceNum;
+        const futureTokenAmount = spendableV / referencePriceV;
+        if (Number.isFinite(futureTokenAmount) && futureTokenAmount >= 0) {
+          const spendableText = fmtNum(spendableV, 6);
+          const balanceHint = Number.isFinite(balanceNum) && balanceNum >= 0
+            ? fmtNum(balanceNum, 6)
+            : "-";
+          robotFutureTokenValue.innerHTML = tipSpanHtml(
+            fmtNum(futureTokenAmount, 6),
+            `参考价V=${referencePriceV}; 可用V=min(授权额度, 当前余额)=${spendableText}; 当前余额=${balanceHint}`
+          );
+        } else {
+          robotFutureTokenValue.textContent = "-";
+        }
+      } else {
+        robotFutureTokenValue.textContent = "-";
+      }
+      lastWalletMetricsAt = now;
+      return balanceRaw !== null || allowanceRaw !== null;
+    }
+
+    async function okxSendApproveTx() {
+      const provider = getOkxProvider();
+      if (!provider) {
+        throw new Error("未检测到 OKX Wallet Provider");
+      }
+      attachOkxProviderListeners(provider);
+      const tokenAddr = String(okxTokenAddrInput?.value || "").trim().toLowerCase();
+      const spenderAddr = String(okxSpenderAddrInput?.value || "").trim().toLowerCase();
+      if (!isHexAddress(tokenAddr)) {
+        throw new Error("token 地址无效");
+      }
+      if (!isHexAddress(spenderAddr)) {
+        throw new Error("spender 地址无效");
+      }
+      const amountHex = parseApproveAmountToHex(okxApproveAmountInput?.value || "");
+      saveOkxAuthorizeDraft();
+
+      let accounts = [];
+      try {
+        accounts = await provider.request({ method: "eth_accounts" });
+      } catch (e) {
+        accounts = [];
+      }
+      if (!Array.isArray(accounts) || !accounts.length) {
+        accounts = await provider.request({ method: "eth_requestAccounts" });
+      }
+      const from = String((accounts && accounts[0]) || "").trim();
+      if (!isHexAddress(from)) {
+        throw new Error("未获取到有效钱包地址");
+      }
+
+      const chainId = await provider.request({ method: "eth_chainId" });
+      if (!isBaseChain(chainId)) {
+        throw new Error(`当前链不是 Base（chainId=${chainId}），请先切换到 Base`);
+      }
+
+      const data = encodeErc20Approve(spenderAddr, amountHex);
+      const txHash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from, to: tokenAddr, data }],
+      });
+      await refreshOkxWalletStatus({ silent: true });
+      await refreshRobotWalletMetrics({ force: true }).catch(() => false);
+      okxWalletMessage.textContent = `授权交易已发送：${shortHash(txHash)}`;
+      return true;
+    }
+
+    function initOkxWalletPanel() {
+      loadOkxAuthorizeDraft();
+      refreshOkxWalletStatus({ silent: true }).then((s) => {
+        if (s?.provider) {
+          attachOkxProviderListeners(s.provider);
+        }
+        refreshRobotWalletMetrics({ force: true }).catch(() => false);
+      }).catch(() => {
+        setOkxWalletStatus({ providerText: "检测失败", account: "", chainId: "" });
+        setRobotWalletMetricsPlaceholder();
+      });
     }
 
     async function loadMeta() {
@@ -2624,6 +3165,18 @@
         fmtNum(summary?.unrealizedPnlV, 6),
         summary?.unrealizedPnlV
       );
+      const investedV = Number(summary?.investedV || 0);
+      const pnlV = Number(summary?.unrealizedPnlV || 0);
+      if (investedV > 0) {
+        const roi = pnlV / investedV;
+        const roiText = `${fmtNumFixed(roi * 100, 2)}%`;
+        robotRoiValue.innerHTML = numWithExactTitle(
+          roiText,
+          `pnl=${summary?.unrealizedPnlV || 0}, invested=${summary?.investedV || 0}`
+        );
+      } else {
+        robotRoiValue.textContent = "-";
+      }
 
       robotPosMeta.textContent =
         `持仓数=${fmtNum(summary?.openPositionCount || 0, 0)} | ` +
@@ -2861,8 +3414,10 @@
         : "-";
       renderRobotSummary(robotSummary || {});
       renderPoolTable(poolData?.items || []);
-      renderRobotPositions(robotPositions?.items || []);
+      lastRobotPositionsRows = robotPositions?.items || [];
+      renderRobotPositions(lastRobotPositionsRows);
       renderRobotTrades(robotTrades?.items || []);
+      refreshRobotWalletMetrics({ force: false }).catch(() => false);
 
       const minuteRows = minutes.items || [];
       drawMinuteChart(minuteRows);
@@ -2914,6 +3469,7 @@
         initProjectDropdown();
         initScanInputsIfEmpty();
         initMinuteInputsIfEmpty();
+        initOkxWalletPanel();
         await loadMeta();
         if (!Number.isFinite(currentDbBatchSize)) {
           try {
@@ -3107,6 +3663,69 @@
         robotControlMessage
       ).catch(console.error);
     });
+    okxDetectBtn.addEventListener("click", () => {
+      runButtonAction(
+        okxDetectBtn,
+        { loading: "检测中...", success: "已检测", failed: "检测失败" },
+        async () => {
+          await refreshOkxWalletStatus({ silent: false });
+          await refreshRobotWalletMetrics({ force: true });
+          return true;
+        },
+        okxWalletMessage
+      ).catch(console.error);
+    });
+    okxConnectBtn.addEventListener("click", () => {
+      runButtonAction(
+        okxConnectBtn,
+        { loading: "连接中...", success: "已连接", failed: "连接失败" },
+        okxConnectWallet,
+        okxWalletMessage
+      ).catch(console.error);
+    });
+    okxSwitchBaseBtn.addEventListener("click", () => {
+      runButtonAction(
+        okxSwitchBaseBtn,
+        { loading: "切换中...", success: "已切换", failed: "切换失败" },
+        okxSwitchToBase,
+        okxWalletMessage
+      ).catch(console.error);
+    });
+    okxRefreshBtn.addEventListener("click", () => {
+      runButtonAction(
+        okxRefreshBtn,
+        { loading: "刷新中...", success: "已刷新", failed: "刷新失败" },
+        async () => {
+          await refreshOkxWalletStatus({ silent: false });
+          await refreshRobotWalletMetrics({ force: true });
+          return true;
+        },
+        okxWalletMessage
+      ).catch(console.error);
+    });
+    okxApproveMaxBtn.addEventListener("click", () => {
+      okxApproveAmountInput.value = MAX_UINT256_DEC;
+      saveOkxAuthorizeDraft();
+      refreshRobotWalletMetrics({ force: true }).catch(() => false);
+      okxWalletMessage.textContent = "已填充 MaxUint256。";
+    });
+    okxAuthorizeBtn.addEventListener("click", () => {
+      runButtonAction(
+        okxAuthorizeBtn,
+        { loading: "授权中...", success: "已发送", failed: "授权失败" },
+        okxSendApproveTx,
+        okxWalletMessage
+      ).catch(console.error);
+    });
+    okxTokenAddrInput.addEventListener("change", () => {
+      saveOkxAuthorizeDraft();
+      refreshRobotWalletMetrics({ force: true }).catch(() => false);
+    });
+    okxSpenderAddrInput.addEventListener("change", () => {
+      saveOkxAuthorizeDraft();
+      refreshRobotWalletMetrics({ force: true }).catch(() => false);
+    });
+    okxApproveAmountInput.addEventListener("change", saveOkxAuthorizeDraft);
     poolRefreshBtn.addEventListener("click", () => {
       runButtonAction(
         poolRefreshBtn,
